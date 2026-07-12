@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   FulfillmentType,
+  KitchenStatus,
   OrderStatus,
   PaymentStatus,
   Prisma,
@@ -26,7 +27,55 @@ export class OrdersService {
    * ₹5 platform fee. Order + items + preferences + a "created" Payment + the
    * first status-history row are written atomically in one transaction.
    */
+  private serviceDate(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
   async create(dto: CreateOrderDto) {
+    // --- Gap #5: kitchen readiness checks ---
+    const kitchen = await this.prisma.kitchen.findUnique({
+      where: { id: dto.kitchenId },
+    });
+    if (!kitchen) throw new NotFoundException('Kitchen not found.');
+    if (kitchen.status !== KitchenStatus.verified) {
+      throw new BadRequestException('Kitchen is not verified.');
+    }
+
+    const today = this.serviceDate();
+
+    const dailyStatus = await this.prisma.kitchenDailyStatus.findUnique({
+      where: {
+        kitchenId_serviceDate: {
+          kitchenId: dto.kitchenId,
+          serviceDate: today,
+        },
+      },
+    });
+    if (!dailyStatus?.isCooking) {
+      throw new BadRequestException('Kitchen is not cooking today.');
+    }
+
+    const dayOfWeek = new Date().getDay(); // 0=Sun .. 6=Sat
+    const hours = await this.prisma.kitchenHours.findUnique({
+      where: {
+        kitchenId_dayOfWeek: {
+          kitchenId: dto.kitchenId,
+          dayOfWeek,
+        },
+      },
+    });
+    if (!hours) {
+      throw new BadRequestException('Kitchen is not open today.');
+    }
+    const now = new Date();
+    const currentTime =
+      `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    if (currentTime < hours.openTime || currentTime >= hours.closeTime) {
+      throw new BadRequestException('Kitchen is outside operating hours.');
+    }
+
+    // --- Validate items ---
     const config = await this.prisma.platformConfig.findUniqueOrThrow({
       where: { id: 1 },
     });
@@ -65,6 +114,27 @@ export class OrdersService {
     const grandTotal = foodTotal + platformFee + deliveryFee;
 
     return this.prisma.$transaction(async (tx) => {
+      // --- Gap #6: decrement plate counts atomically ---
+      for (const line of dto.items) {
+        const item = byId.get(line.menuItemId)!;
+        const updated = await tx.menuDailyAvailability.updateMany({
+          where: {
+            menuItemId: line.menuItemId,
+            serviceDate: today,
+            isAvailable: true,
+            platesRemaining: { gte: line.quantity },
+          },
+          data: {
+            platesRemaining: { decrement: line.quantity },
+          },
+        });
+        if (updated.count === 0) {
+          throw new BadRequestException(
+            `"${item.name}" has insufficient plates available.`,
+          );
+        }
+      }
+
       const order = await tx.order.create({
         data: {
           customerId: dto.customerId,

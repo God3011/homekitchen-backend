@@ -24,8 +24,7 @@ enum FulfillmentType {
 // Full lifecycle incl. the ETA / "I'm Leaving" / "I've Arrived" pickup loop
 enum OrderStatus {
   received          // customer placed, awaiting seller
-  accepted          // seller tapped Accept
-  preparing         // seller set an ETA; customer sees "Preparing"
+  preparing         // seller accepted + set an ETA; customer sees "Preparing"
   ready             // seller tapped Mark Ready
   customer_en_route // customer tapped "I'm Leaving"
   customer_arrived  // customer tapped "I've Arrived"
@@ -102,6 +101,7 @@ model Zone {
 // ---------------------------------------------------------------------------
 model Customer {
   id             String   @id @default(uuid()) @db.Uuid
+  firebaseUid    String?  @unique @map("firebase_uid")
   phone          String   @unique
   name           String?
   homeZoneId     String?  @map("home_zone_id") @db.Uuid
@@ -122,6 +122,7 @@ model Customer {
 // ---------------------------------------------------------------------------
 model Kitchen {
   id            String        @id @default(uuid()) @db.Uuid
+  firebaseUid   String?       @unique @map("firebase_uid")
   phone         String        @unique
   kitchenName   String        @map("kitchen_name")
   cookName      String?       @map("cook_name")
@@ -173,6 +174,7 @@ model KitchenHours {
 
   kitchen Kitchen @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
 
+  @@unique([kitchenId, dayOfWeek])
   @@map("kitchen_hours")
 }
 
@@ -274,6 +276,8 @@ model Order {
   readyAt          DateTime?       @map("ready_at") @db.Timestamptz
   completedAt      DateTime?       @map("completed_at") @db.Timestamptz
   rejectReason     String?         @map("reject_reason")
+  cancelledAt      DateTime?       @map("cancelled_at") @db.Timestamptz
+  cancelReason     String?         @map("cancel_reason")
 
   customer      Customer             @relation(fields: [customerId], references: [id])
   kitchen       Kitchen              @relation(fields: [kitchenId], references: [id])
@@ -402,4 +406,32 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// FCM device tokens (per customer/kitchen, for push notifications)
+// ---------------------------------------------------------------------------
+model DeviceToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  ownerType  String   @map("owner_type")  // "customer" | "kitchen"
+  ownerId    String   @map("owner_id") @db.Uuid
+  fcmToken   String   @unique @map("fcm_token")
+  deviceInfo String?  @map("device_info")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([ownerType, ownerId])
+  @@map("device_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Admin users (for admin panel auth)
+// ---------------------------------------------------------------------------
+model Admin {
+  id          String   @id @default(uuid()) @db.Uuid
+  firebaseUid String   @unique @map("firebase_uid")
+  email       String   @unique
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("admins")
 }

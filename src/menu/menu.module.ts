@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
+import { MenuController } from './menu.controller';
+import { MenuService } from './menu.service';
 
-// TODO (next sprint): controller + service for the menu module.
-@Module({})
+@Module({
+  controllers: [MenuController],
+  providers: [MenuService],
+})
 export class MenuModule {}

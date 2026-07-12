@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
+import { KitchensController } from './kitchens.controller';
+import { KitchensService } from './kitchens.service';
 
-// TODO (next sprint): controller + service for the kitchens module.
-@Module({})
+@Module({
+  controllers: [KitchensController],
+  providers: [KitchensService],
+})
 export class KitchensModule {}

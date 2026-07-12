@@ -5,6 +5,8 @@ import { HealthController } from './health/health.controller';
 import { OrdersModule } from './orders/orders.module';
 import { KitchensModule } from './kitchens/kitchens.module';
 import { MenuModule } from './menu/menu.module';
+import { PaymentsModule } from './payments/payments.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
 
 @Module({
@@ -15,6 +17,8 @@ import { AuthModule } from './auth/auth.module';
     KitchensModule,
     MenuModule,
     OrdersModule,
+    PaymentsModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
 })
