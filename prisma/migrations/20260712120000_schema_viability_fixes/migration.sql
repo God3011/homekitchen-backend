@@ -23,12 +23,13 @@ CREATE INDEX "device_tokens_owner_type_owner_id_idx" ON "device_tokens"("owner_t
 -- Gap #3: Remove unused 'accepted' enum value from OrderStatus
 -- Postgres doesn't support DROP VALUE, so rebuild the enum.
 -- Safe pre-production: no rows reference 'accepted'.
+ALTER TABLE "orders" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "orders" ALTER COLUMN "status" TYPE TEXT;
 ALTER TABLE "order_status_history" ALTER COLUMN "status" TYPE TEXT;
 DROP TYPE "OrderStatus";
 CREATE TYPE "OrderStatus" AS ENUM ('received', 'preparing', 'ready', 'customer_en_route', 'customer_arrived', 'out_for_delivery', 'completed', 'rejected', 'cancelled');
 ALTER TABLE "orders" ALTER COLUMN "status" TYPE "OrderStatus" USING "status"::"OrderStatus";
-ALTER TABLE "orders" ALTER COLUMN "status" SET DEFAULT 'received';
+ALTER TABLE "orders" ALTER COLUMN "status" SET DEFAULT 'received'::"OrderStatus";
 ALTER TABLE "order_status_history" ALTER COLUMN "status" TYPE "OrderStatus" USING "status"::"OrderStatus";
 
 -- Gap #4: Add unique constraint on KitchenHours (kitchen_id, day_of_week)

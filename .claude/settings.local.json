@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(git add:*)",
+      "Bash(docker compose ps 2>/dev/null || docker-compose ps 2>/dev/null)",
+      "Bash(npx prisma@6:*)",
+      "Bash(source .env:*)",
+      "Bash(docker exec:*)"
+    ]
+  }
+}
