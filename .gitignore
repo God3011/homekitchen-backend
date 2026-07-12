@@ -3,3 +3,14 @@ dist/
 .env
 *.log
 prisma/migrations/dev.db*
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.iml
+.idea/
+.gradle/
+local.properties
+**/*.g.dart
