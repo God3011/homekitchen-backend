@@ -1,0 +1,405 @@
+// ============================================================================
+// Homely Food Marketplace — Prisma schema (v1)
+// Single source of truth for the NestJS backend. One Postgres schema (public);
+// modules are logical, not separate DB schemas. Money is stored in paise (Int).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+enum FulfillmentType {
+  pickup
+  delivery
+}
+
+// Full lifecycle incl. the ETA / "I'm Leaving" / "I've Arrived" pickup loop
+enum OrderStatus {
+  received          // customer placed, awaiting seller
+  accepted          // seller tapped Accept
+  preparing         // seller set an ETA; customer sees "Preparing"
+  ready             // seller tapped Mark Ready
+  customer_en_route // customer tapped "I'm Leaving"
+  customer_arrived  // customer tapped "I've Arrived"
+  out_for_delivery  // delivery path (v2), kept for forward-compat
+  completed         // handover OTP confirmed / delivered
+  rejected          // seller tapped Can't Make It
+  cancelled
+}
+
+enum KitchenStatus {
+  pending_review
+  verified
+  suspended
+}
+
+enum PreferenceType {
+  less_spicy
+  normal_spicy
+  extra_spicy
+  no_onion
+  no_garlic
+  less_oil
+  extra_rice
+}
+
+enum PaymentStatus {
+  created
+  authorized
+  captured
+  failed
+  refunded
+}
+
+enum DocType {
+  fssai
+  id_proof
+}
+
+// ---------------------------------------------------------------------------
+// Platform config (single row: ₹5 customer fee, ₹50/day seller fee, ₹200 cap)
+// ---------------------------------------------------------------------------
+model PlatformConfig {
+  id                   Int      @id @default(1)
+  platformFeePaise     Int      @default(500)   @map("platform_fee_paise")
+  sellerDailyFeePaise  Int      @default(5000)  @map("seller_daily_fee_paise")
+  orderCapPaise        Int      @default(20000) @map("order_cap_paise")
+  currency             String   @default("INR") @db.Char(3)
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("platform_config")
+}
+
+// ---------------------------------------------------------------------------
+// Zones
+// ---------------------------------------------------------------------------
+model Zone {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  centerLat  Float    @map("center_lat")
+  centerLng  Float    @map("center_lng")
+  radiusM    Int      @default(5000) @map("radius_m")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  customers Customer[]
+  kitchens  Kitchen[]
+  orders    Order[]
+
+  @@map("zones")
+}
+
+// ---------------------------------------------------------------------------
+// Customers (Customer App)
+// ---------------------------------------------------------------------------
+model Customer {
+  id             String   @id @default(uuid()) @db.Uuid
+  phone          String   @unique
+  name           String?
+  homeZoneId     String?  @map("home_zone_id") @db.Uuid
+  whatsappOptIn  Boolean  @default(false) @map("whatsapp_opt_in")
+  signupMethod   String   @default("phone_otp") @map("signup_method")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  homeZone   Zone?      @relation(fields: [homeZoneId], references: [id])
+  orders     Order[]
+  ratings    Rating[]
+  favorites  Favorite[]
+
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Kitchens / Sellers (Seller App)
+// ---------------------------------------------------------------------------
+model Kitchen {
+  id            String        @id @default(uuid()) @db.Uuid
+  phone         String        @unique
+  kitchenName   String        @map("kitchen_name")
+  cookName      String?       @map("cook_name")
+  cookPhotoUrl  String?       @map("cook_photo_url")
+  story         String?
+  signatureDish String?       @map("signature_dish")
+  addressLine   String?       @map("address_line")
+  lat           Float?
+  lng           Float?
+  zoneId        String?       @map("zone_id") @db.Uuid
+  status        KitchenStatus @default(pending_review)
+  verifiedAt    DateTime?     @map("verified_at") @db.Timestamptz
+  languagePref  String        @default("en") @map("language_pref")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  zone         Zone?                @relation(fields: [zoneId], references: [id])
+  documents    KitchenDocument[]
+  hours        KitchenHours[]
+  categories   MenuCategory[]
+  menuItems    MenuItem[]
+  dailyStatus  KitchenDailyStatus[]
+  orders       Order[]
+  ratings      Rating[]
+  payouts      Payout[]
+  favorites    Favorite[]
+
+  @@index([zoneId, status])
+  @@map("kitchens")
+}
+
+model KitchenDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  kitchenId  String   @map("kitchen_id") @db.Uuid
+  docType    DocType  @map("doc_type")
+  fileUrl    String   @map("file_url")
+  uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz
+
+  kitchen Kitchen @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+
+  @@map("kitchen_documents")
+}
+
+model KitchenHours {
+  id         String @id @default(uuid()) @db.Uuid
+  kitchenId  String @map("kitchen_id") @db.Uuid
+  dayOfWeek  Int    @map("day_of_week") // 0=Sun .. 6=Sat
+  openTime   String @map("open_time")   // "11:00"
+  closeTime  String @map("close_time")  // "15:00"
+
+  kitchen Kitchen @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+
+  @@map("kitchen_hours")
+}
+
+// ---------------------------------------------------------------------------
+// Menu
+// ---------------------------------------------------------------------------
+model MenuCategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  kitchenId  String   @map("kitchen_id") @db.Uuid
+  name       String
+  sortOrder  Int      @default(0) @map("sort_order")
+
+  kitchen Kitchen    @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  items   MenuItem[]
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  kitchenId         String   @map("kitchen_id") @db.Uuid
+  categoryId        String?  @map("category_id") @db.Uuid
+  name              String
+  photoUrl          String?  @map("photo_url")
+  pricePaise        Int      @map("price_paise")
+  pickupAvailable   Boolean  @default(true) @map("pickup_available")
+  deliveryAvailable Boolean  @default(false) @map("delivery_available")
+  deliveryFeePaise  Int      @default(0) @map("delivery_fee_paise")
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  kitchen      Kitchen                 @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+  category     MenuCategory?           @relation(fields: [categoryId], references: [id])
+  preferences  MenuItemPreference[]
+  availability MenuDailyAvailability[]
+  orderItems   OrderItem[]
+
+  @@index([kitchenId, isActive])
+  @@map("menu_items")
+}
+
+// Which preference toggles THIS dish offers (app enforces 4-6 max)
+model MenuItemPreference {
+  menuItemId String         @map("menu_item_id") @db.Uuid
+  preference PreferenceType
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, preference])
+  @@map("menu_item_preferences")
+}
+
+// ---------------------------------------------------------------------------
+// Daily availability ("Cooking Today?" + plates per item)
+// ---------------------------------------------------------------------------
+model KitchenDailyStatus {
+  kitchenId   String   @map("kitchen_id") @db.Uuid
+  serviceDate DateTime @map("service_date") @db.Date
+  isCooking   Boolean  @default(false) @map("is_cooking")
+  feeCharged  Boolean  @default(false) @map("fee_charged")
+
+  kitchen Kitchen @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+
+  @@id([kitchenId, serviceDate])
+  @@map("kitchen_daily_status")
+}
+
+model MenuDailyAvailability {
+  menuItemId      String   @map("menu_item_id") @db.Uuid
+  serviceDate     DateTime @map("service_date") @db.Date
+  platesTotal     Int      @default(0) @map("plates_total")
+  platesRemaining Int      @default(0) @map("plates_remaining")
+  isAvailable     Boolean  @default(true) @map("is_available")
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, serviceDate])
+  @@map("menu_daily_availability")
+}
+
+// ---------------------------------------------------------------------------
+// Orders  (food_total <= ₹200) + platform_fee (₹5) + delivery_fee = grand_total
+// ---------------------------------------------------------------------------
+model Order {
+  id               String          @id @default(uuid()) @db.Uuid
+  customerId       String          @map("customer_id") @db.Uuid
+  kitchenId        String          @map("kitchen_id") @db.Uuid
+  zoneId           String?         @map("zone_id") @db.Uuid
+  fulfillment      FulfillmentType
+  status           OrderStatus     @default(received)
+  foodTotalPaise   Int             @map("food_total_paise")
+  platformFeePaise Int             @default(500) @map("platform_fee_paise")
+  deliveryFeePaise Int             @default(0) @map("delivery_fee_paise")
+  grandTotalPaise  Int             @map("grand_total_paise")
+  etaMinutes       Int?            @map("eta_minutes")     // seller-set prep ETA
+  handoverCode     String          @map("handover_code") @db.Char(4)
+  placedAt         DateTime        @default(now()) @map("placed_at") @db.Timestamptz
+  acceptedAt       DateTime?       @map("accepted_at") @db.Timestamptz
+  readyAt          DateTime?       @map("ready_at") @db.Timestamptz
+  completedAt      DateTime?       @map("completed_at") @db.Timestamptz
+  rejectReason     String?         @map("reject_reason")
+
+  customer      Customer             @relation(fields: [customerId], references: [id])
+  kitchen       Kitchen              @relation(fields: [kitchenId], references: [id])
+  zone          Zone?                @relation(fields: [zoneId], references: [id])
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  payment       Payment?
+  rating        Rating?
+
+  @@index([kitchenId, status])
+  @@index([customerId, placedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String @id @default(uuid()) @db.Uuid
+  orderId        String @map("order_id") @db.Uuid
+  menuItemId     String @map("menu_item_id") @db.Uuid
+  itemName       String @map("item_name")        // snapshot
+  unitPricePaise Int    @map("unit_price_paise") // snapshot
+  quantity       Int
+
+  order       Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem                @relation(fields: [menuItemId], references: [id])
+  preferences OrderItemPreference[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderItemPreference {
+  orderItemId String         @map("order_item_id") @db.Uuid
+  preference  PreferenceType
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@id([orderItemId, preference])
+  @@map("order_item_preferences")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @map("order_id") @db.Uuid
+  status    OrderStatus
+  changedAt DateTime    @default(now()) @map("changed_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, changedAt])
+  @@map("order_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// Payments (separate table — clean for refunds + admin). No card data stored.
+// ---------------------------------------------------------------------------
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  orderId         String        @unique @map("order_id") @db.Uuid
+  amountPaise     Int           @map("amount_paise")
+  method          String?       // "upi" | "card" | ...
+  status          PaymentStatus @default(created)
+  razorpayOrderId String?       @map("razorpay_order_id")
+  razorpayPayId   String?       @map("razorpay_payment_id")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Ratings, Payouts, Favorites, Audit
+// ---------------------------------------------------------------------------
+model Rating {
+  id         String   @id @default(uuid()) @db.Uuid
+  orderId    String   @unique @map("order_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  kitchenId  String   @map("kitchen_id") @db.Uuid
+  stars      Int
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id])
+  kitchen  Kitchen  @relation(fields: [kitchenId], references: [id])
+
+  @@index([kitchenId])
+  @@map("ratings")
+}
+
+model Payout {
+  id          String   @id @default(uuid()) @db.Uuid
+  kitchenId   String   @map("kitchen_id") @db.Uuid
+  amountPaise Int      @map("amount_paise")
+  payoutDate  DateTime @map("payout_date") @db.Date
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  kitchen Kitchen @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+
+  @@index([kitchenId, payoutDate])
+  @@map("payouts")
+}
+
+model Favorite {
+  customerId String   @map("customer_id") @db.Uuid
+  kitchenId  String   @map("kitchen_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  kitchen  Kitchen  @relation(fields: [kitchenId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, kitchenId])
+  @@map("favorites")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorType  String   @map("actor_type") // "customer" | "kitchen" | "admin" | "system"
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

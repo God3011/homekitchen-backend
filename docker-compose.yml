@@ -1,0 +1,46 @@
+# Local/MVP stack: Postgres + NestJS backend + Nginx reverse proxy.
+# In production the DB is DigitalOcean Managed Postgres (Bangalore) instead of
+# this container — point DATABASE_URL at it and drop the `db` service.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: homekitchen
+      POSTGRES_PASSWORD: homekitchen
+      POSTGRES_DB: homekitchen
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homekitchen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://homekitchen:homekitchen@db:5432/homekitchen?schema=public"
+      PORT: "3000"
+      NODE_ENV: production
+    expose:
+      - "3000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  pgdata:
