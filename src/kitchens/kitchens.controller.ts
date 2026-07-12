@@ -61,6 +61,15 @@ export class KitchensController {
   }
 
   @Roles('kitchen')
+  @Get('me/orders')
+  listOrders(
+    @CurrentUser() user: RequestUser,
+    @Query('status') status?: string,
+  ) {
+    return this.kitchens.listOrders(user.userId, status);
+  }
+
+  @Roles('kitchen')
   @Get('me/documents')
   getDocuments(@CurrentUser() user: RequestUser) {
     return this.kitchens.getDocuments(user.userId);

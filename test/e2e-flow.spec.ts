@@ -46,6 +46,7 @@ process.env.DATABASE_URL = TEST_DB_URL;
 // Fake decoded-token payloads keyed by Bearer token string
 const DECODED_TOKENS: Record<string, { uid: string; phone_number?: string }> = {
   'kitchen-test-token': { uid: 'fb-kitchen-001', phone_number: '+919876543210' },
+  'kitchen2-test-token': { uid: 'fb-kitchen-002', phone_number: '+919876543299' },
   'customer-test-token': { uid: 'fb-customer-001' },
   'admin-test-token': { uid: 'fb-admin-001' },
 };
@@ -430,6 +431,68 @@ describe('E2E: Full order lifecycle', () => {
 
     expect(res.body.status).toBe('completed');
     expect(res.body.completedAt).toBeTruthy();
+  });
+
+  // =====================================================================
+  // Step 6e — Kitchen lists its own orders
+  // =====================================================================
+  it('6e. Kitchen lists its own orders with full details', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/kitchens/me/orders')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+
+    const order = res.body.find((o: any) => o.id === orderId);
+    expect(order).toBeTruthy();
+    expect(order.status).toBe('completed');
+    expect(order.fulfillment).toBe('pickup');
+    expect(order.foodTotalPaise).toBe(15000);
+    expect(order.platformFeePaise).toBe(500);
+    expect(order.grandTotalPaise).toBe(15500);
+    expect(order.etaMinutes).toBe(25);
+    expect(order.handoverCode).toBeTruthy();
+    expect(order.items).toHaveLength(1);
+    expect(order.items[0].itemName).toBe('Hyderabadi Biryani');
+    expect(order.items[0].preferences).toBeDefined();
+    expect(order.payment).toBeTruthy();
+  });
+
+  it('6f. Kitchen can filter orders by status', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/kitchens/me/orders?status=completed')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].status).toBe('completed');
+
+    // No received orders remain
+    const empty = await request(app.getHttpServer())
+      .get('/api/kitchens/me/orders?status=received')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(empty.body).toHaveLength(0);
+  });
+
+  it('6g. Another kitchen CANNOT see this kitchen\'s orders', async () => {
+    // Sign up a second kitchen
+    await request(app.getHttpServer())
+      .post('/api/kitchens/signup')
+      .set('Authorization', 'Bearer kitchen2-test-token')
+      .send({ kitchenName: 'Other Kitchen', zoneId: ZONE_ID })
+      .expect(201);
+
+    // Second kitchen's order list must be empty
+    const res = await request(app.getHttpServer())
+      .get('/api/kitchens/me/orders')
+      .set('Authorization', 'Bearer kitchen2-test-token')
+      .expect(200);
+
+    expect(res.body).toHaveLength(0);
   });
 
   // =====================================================================

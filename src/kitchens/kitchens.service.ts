@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { KitchenStatus } from '@prisma/client';
+import { KitchenStatus, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FirebaseService } from '../auth/firebase.service';
 import { CreateKitchenDto } from './dto/create-kitchen.dto';
@@ -163,6 +163,21 @@ export class KitchensService {
     return this.prisma.kitchen.update({
       where: { id: kitchenId },
       data: { status: KitchenStatus.suspended },
+    });
+  }
+
+  // ── Kitchen orders ──────────────────────────────────────────────────
+  listOrders(kitchenId: string, status?: string) {
+    return this.prisma.order.findMany({
+      where: {
+        kitchenId,
+        ...(status ? { status: status as OrderStatus } : {}),
+      },
+      orderBy: { placedAt: 'desc' },
+      include: {
+        items: { include: { preferences: true } },
+        payment: true,
+      },
     });
   }
 
