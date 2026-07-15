@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { KitchenStatus, OrderStatus } from '@prisma/client';
+import { DocType, KitchenStatus, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FirebaseService } from '../auth/firebase.service';
 import { CreateKitchenDto } from './dto/create-kitchen.dto';
@@ -15,16 +15,24 @@ import {
   SetKitchenHoursDto,
   UploadDocumentDto,
 } from './dto/kitchen-actions.dto';
+import { StorageService, UploadFile } from '../storage/storage.service';
+
+/** Photo files submitted with the multipart signup request. */
+export interface SignupFiles {
+  kitchenPhotos?: UploadFile[];
+  selfPhoto?: UploadFile[];
+}
 
 @Injectable()
 export class KitchensService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly firebase: FirebaseService,
+    private readonly storage: StorageService,
   ) {}
 
   // ── Signup (public) ──────────────────────────────────────────────────
-  async signup(idToken: string, dto: CreateKitchenDto) {
+  async signup(idToken: string, dto: CreateKitchenDto, files: SignupFiles = {}) {
     if (!idToken) {
       throw new UnauthorizedException('Missing Firebase token.');
     }
@@ -44,6 +52,16 @@ export class KitchensService {
       );
     }
 
+    // Required photos: at least one kitchen photo + a photo of the cook.
+    const kitchenPhotos = files.kitchenPhotos ?? [];
+    const selfPhoto = files.selfPhoto?.[0];
+    if (kitchenPhotos.length === 0) {
+      throw new BadRequestException('At least one kitchen photo is required.');
+    }
+    if (!selfPhoto) {
+      throw new BadRequestException('A photo of yourself is required.');
+    }
+
     const existing = await this.prisma.kitchen.findUnique({
       where: { firebaseUid },
     });
@@ -53,12 +71,19 @@ export class KitchensService {
       );
     }
 
+    // Upload to R2 before creating the row so we only persist real URLs.
+    const prefix = `kitchens/${firebaseUid}`;
+    const kitchenPhotoUrls = await this.storage.uploadImages(kitchenPhotos, prefix);
+    const cookPhotoUrl = await this.storage.uploadImage(selfPhoto, prefix);
+
     return this.prisma.kitchen.create({
       data: {
         firebaseUid,
         phone,
         kitchenName: dto.kitchenName,
         cookName: dto.cookName,
+        cookPhotoUrl,
+        kitchenPhotoUrls,
         story: dto.story,
         signatureDish: dto.signatureDish,
         addressLine: dto.addressLine,
@@ -93,6 +118,22 @@ export class KitchensService {
         docType: dto.docType,
         fileUrl: dto.fileUrl,
       },
+    });
+  }
+
+  /** Multipart doc upload: pushes the file to R2, then records the URL. */
+  async uploadDocumentFile(
+    kitchenId: string,
+    docType: DocType,
+    file?: UploadFile,
+  ) {
+    if (!file) throw new BadRequestException('No document file provided.');
+    const fileUrl = await this.storage.uploadImage(
+      file,
+      `documents/${kitchenId}`,
+    );
+    return this.prisma.kitchenDocument.create({
+      data: { kitchenId, docType, fileUrl },
     });
   }
 
@@ -174,6 +215,9 @@ export class KitchensService {
         ...(status ? { status: status as OrderStatus } : {}),
       },
       orderBy: { placedAt: 'desc' },
+      // Never expose handoverCode to the kitchen — it's the customer's
+      // proof-of-pickup; the seller only enters what the customer tells them.
+      omit: { handoverCode: true },
       include: {
         items: { include: { preferences: true } },
         payment: true,
@@ -184,10 +228,11 @@ export class KitchensService {
   // ── Customer-facing ──────────────────────────────────────────────────
   list(zoneId?: string) {
     const today = new Date();
+    // UTC-midnight of the local calendar day so it matches stored dates.
+    // Local midnight (new Date(y,m,d)) resolves to the previous UTC day in
+    // positive-offset zones like IST — see OrdersService.serviceDate().
     const serviceDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
+      Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()),
     );
 
     return this.prisma.kitchen.findMany({

@@ -14,3 +14,7 @@ build/
 .gradle/
 local.properties
 **/*.g.dart
+
+# Firebase app config (share out-of-band, not in VCS)
+**/google-services.json
+**/GoogleService-Info.plist

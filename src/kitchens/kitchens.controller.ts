@@ -8,13 +8,19 @@ import {
   Post,
   Put,
   Query,
+  UploadedFile,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
-import { KitchensService } from './kitchens.service';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { KitchensService, SignupFiles } from './kitchens.service';
+import { UploadFile } from '../storage/storage.service';
 import { CreateKitchenDto } from './dto/create-kitchen.dto';
 import { UpdateKitchenDto } from './dto/update-kitchen.dto';
 import {
   SetDailyStatusDto,
   SetKitchenHoursDto,
+  UploadDocFileDto,
   UploadDocumentDto,
 } from './dto/kitchen-actions.dto';
 import { CurrentUser, Public, RequestUser } from '../auth/decorators';
@@ -25,14 +31,25 @@ export class KitchensController {
   constructor(private readonly kitchens: KitchensService) {}
 
   // --- Signup (public — token verified manually in service) ---
+  // multipart/form-data: text fields + `kitchenPhotos[]` (>=1) + `selfPhoto` (1).
   @Public()
   @Post('signup')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'kitchenPhotos', maxCount: 8 },
+        { name: 'selfPhoto', maxCount: 1 },
+      ],
+      { limits: { fileSize: 5 * 1024 * 1024 } }, // 5 MB per image
+    ),
+  )
   signup(
     @Headers('authorization') authHeader: string,
     @Body() dto: CreateKitchenDto,
+    @UploadedFiles() files: SignupFiles,
   ) {
     const token = authHeader?.replace('Bearer ', '');
-    return this.kitchens.signup(token, dto);
+    return this.kitchens.signup(token, dto, files);
   }
 
   // --- Seller self-service (defined before :id to avoid route conflict) ---
@@ -58,6 +75,20 @@ export class KitchensController {
     @Body() dto: UploadDocumentDto,
   ) {
     return this.kitchens.uploadDocument(user.userId, dto);
+  }
+
+  // multipart: `file` (image of the doc) + `docType` field. Uploads to R2.
+  @Roles('kitchen')
+  @Post('me/documents/upload')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  uploadDocumentFile(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: UploadDocFileDto,
+    @UploadedFile() file: UploadFile,
+  ) {
+    return this.kitchens.uploadDocumentFile(user.userId, dto.docType, file);
   }
 
   @Roles('kitchen')

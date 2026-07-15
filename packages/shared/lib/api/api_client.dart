@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 /// Dio-based HTTP client for the Homely backend API.
 ///
@@ -19,6 +20,7 @@ class ApiClient {
           },
         )) {
     _dio.interceptors.add(_AuthInterceptor());
+    debugPrint('ApiClient initialized with baseUrl: $baseUrl');
   }
 
   /// Manually set the Authorization Bearer header.
@@ -86,6 +88,37 @@ class ApiClient {
     );
     return response.data!;
   }
+
+  /// DELETE a resource; returns the response body (may be empty).
+  Future<Map<String, dynamic>> delete(String path) async {
+    final response = await _dio.delete<Map<String, dynamic>>(path);
+    return response.data ?? <String, dynamic>{};
+  }
+
+  /// POST multipart/form-data: string [fields] plus [files] keyed by field name.
+  /// Each entry in a file list becomes one part under that field name, so
+  /// repeated field names (e.g. `kitchenPhotos`) upload as an array.
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    Map<String, String> fields = const {},
+    Map<String, List<String>> files = const {},
+  }) async {
+    final form = FormData();
+    fields.forEach((k, v) => form.fields.add(MapEntry(k, v)));
+    for (final entry in files.entries) {
+      for (final filePath in entry.value) {
+        form.files.add(MapEntry(
+          entry.key,
+          await MultipartFile.fromFile(
+            filePath,
+            filename: filePath.split('/').last,
+          ),
+        ));
+      }
+    }
+    final response = await _dio.post<Map<String, dynamic>>(path, data: form);
+    return response.data!;
+  }
 }
 
 /// Dio interceptor that auto-attaches the current Firebase user's ID token
@@ -109,6 +142,13 @@ class _AuthInterceptor extends Interceptor {
       }
     }
 
+    debugPrint('API → ${options.method} ${options.uri}');
     return handler.next(options);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    debugPrint('API error: ${err.type} ${err.message} ${err.response?.statusCode} ${err.response?.data}');
+    handler.next(err);
   }
 }

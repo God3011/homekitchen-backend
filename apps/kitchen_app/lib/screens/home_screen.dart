@@ -4,7 +4,10 @@ import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
+import '../services/push_service.dart';
 import 'orders_screen.dart';
+import 'menu_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -17,10 +20,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // Register this device for order/stock push alerts (user is signed in here).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      registerDeviceToken(ref.read(apiClientProvider));
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = [
       const _DashboardPage(),
+      const MenuScreen(),
       const OrdersScreen(),
+      const ProfileScreen(),
     ];
 
     return Scaffold(
@@ -30,7 +44,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.restaurant_menu), label: 'Menu'),
           NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Orders'),
+          NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
@@ -53,17 +70,28 @@ class _DashboardPage extends ConsumerWidget {
 
     final kitchenName = profile.valueOrNull?.kitchenName ?? 'My Kitchen';
     final isCooking = dailyStatus.valueOrNull?['isCooking'] == true;
-    final orderCount = ordersAsync.valueOrNull?.length ?? 0;
+    final orders = ordersAsync.valueOrNull ?? const <Order>[];
+    final orderCount = orders.length;
+    final now = DateTime.now();
+    // Compare in LOCAL time — API timestamps are UTC, so convert before
+    // comparing the calendar day (otherwise an order at 01:xx IST reads as
+    // "yesterday" in UTC and gets excluded).
+    bool isToday(DateTime d) {
+      final l = d.toLocal();
+      return l.year == now.year && l.month == now.month && l.day == now.day;
+    }
+
+    // Earnings = food total of orders completed today (platform fee is not the
+    // kitchen's; it goes to Homely).
+    final earningsPaise = orders
+        .where((o) =>
+            o.status == OrderStatus.completed &&
+            isToday(o.completedAt ?? o.placedAt))
+        .fold<int>(0, (sum, o) => sum + o.foodTotalPaise);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(kitchenName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(authServiceProvider).signOut(),
-          ),
-        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -123,6 +151,34 @@ class _DashboardPage extends ConsumerWidget {
                           Text("Today's Orders",
                               style: Theme.of(context).textTheme.titleMedium),
                           Text('$orderCount order${orderCount != 1 ? 's' : ''}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Today's earnings
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet,
+                        size: 32, color: Colors.green),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Today's Earnings",
+                              style: Theme.of(context).textTheme.titleMedium),
+                          Text('₹${(earningsPaise / 100).toStringAsFixed(0)}',
                               style: Theme.of(context)
                                   .textTheme
                                   .headlineSmall

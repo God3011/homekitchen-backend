@@ -35,6 +35,12 @@ export class UploadDocumentDto {
   fileUrl: string;
 }
 
+// Multipart upload — the file comes via @UploadedFile, only docType in the body.
+export class UploadDocFileDto {
+  @IsEnum(DocType)
+  docType: DocType;
+}
+
 export class SetDailyStatusDto {
   @IsDateString()
   serviceDate: string;

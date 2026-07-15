@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,10 +13,25 @@ import {
   SetAvailabilityDto,
   SetPreferencesDto,
 } from './dto/menu-actions.dto';
+import { StorageService, UploadFile } from '../storage/storage.service';
 
 @Injectable()
 export class MenuService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /** Upload/replace a dish photo (multipart) → stores the R2 URL on the item. */
+  async uploadItemPhoto(kitchenId: string, itemId: string, file?: UploadFile) {
+    await this.ownsItem(kitchenId, itemId);
+    if (!file) throw new BadRequestException('No photo provided.');
+    const url = await this.storage.uploadImage(file, `menu/${kitchenId}`);
+    return this.prisma.menuItem.update({
+      where: { id: itemId },
+      data: { photoUrl: url },
+    });
+  }
 
   // ── Categories ───────────────────────────────────────────────────────
   createCategory(kitchenId: string, dto: CreateCategoryDto) {
@@ -72,6 +88,13 @@ export class MenuService {
       await this.ownsCategory(kitchenId, dto.categoryId);
     }
 
+    const config = await this.prisma.platformConfig.findUniqueOrThrow({ where: { id: 1 } });
+    if (dto.pricePaise > config.itemPriceCapPaise) {
+      throw new BadRequestException(
+        `Price exceeds the ₹${config.itemPriceCapPaise / 100} per-item cap.`,
+      );
+    }
+
     return this.prisma.menuItem.create({
       data: {
         kitchenId,
@@ -98,6 +121,15 @@ export class MenuService {
     await this.ownsItem(kitchenId, itemId);
     if (dto.categoryId) {
       await this.ownsCategory(kitchenId, dto.categoryId);
+    }
+
+    if (dto.pricePaise !== undefined) {
+      const config = await this.prisma.platformConfig.findUniqueOrThrow({ where: { id: 1 } });
+      if (dto.pricePaise > config.itemPriceCapPaise) {
+        throw new BadRequestException(
+          `Price exceeds the ₹${config.itemPriceCapPaise / 100} per-item cap.`,
+        );
+      }
     }
 
     return this.prisma.menuItem.update({

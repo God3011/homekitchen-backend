@@ -87,32 +87,25 @@ class _OrderDetailBody extends ConsumerWidget {
         _totalRow(context, 'Grand total', order.grandTotalPaise, bold: true),
         const Divider(height: 32),
 
-        // Handover code — only show when ready or later
+        // Handover prompt — the code is the customer's; the kitchen never sees
+        // it, only asks the customer for it and enters it to complete.
         if (_showHandoverCode(order.status)) ...[
           Center(
             child: Column(
               children: [
-                Text('Handover Code',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Icon(Icons.lock_outline,
+                    size: 28, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                Text('Handover',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
-                    order.handoverCode,
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineLarge
-                        ?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 8,
-                        ),
+                    'Ask the customer for their 4-digit code and enter it to '
+                    'complete the order.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
               ],
@@ -186,10 +179,23 @@ class _OrderDetailBody extends ConsumerWidget {
   Widget _buildActions(BuildContext context, WidgetRef ref) {
     switch (order.status) {
       case OrderStatus.received:
-        return ElevatedButton.icon(
-          icon: const Icon(Icons.check),
-          label: const Text('Accept Order'),
-          onPressed: () => _acceptOrder(context, ref),
+        return Column(
+          children: [
+            ElevatedButton.icon(
+              icon: const Icon(Icons.check),
+              label: const Text('Accept Order'),
+              onPressed: () => _acceptOrder(context, ref),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.close),
+              label: const Text('Reject Order'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: () => _rejectOrder(context, ref),
+            ),
+          ],
         );
       case OrderStatus.preparing:
         return ElevatedButton.icon(
@@ -226,6 +232,24 @@ class _OrderDetailBody extends ConsumerWidget {
       'order_id': order.id,
       'response_time_seconds': responseTime,
     });
+
+    ref.invalidate(orderDetailProvider(order.id));
+    ref.invalidate(ordersProvider(null));
+  }
+
+  Future<void> _rejectOrder(BuildContext context, WidgetRef ref) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _RejectReasonDialog(),
+    );
+    if (reason == null) return; // dialog dismissed
+
+    final api = ref.read(apiClientProvider);
+    await api.patch('/orders/${order.id}/reject', body: {
+      if (reason.isNotEmpty) 'reason': reason,
+    });
+
+    trackEvent('order_rejected', {'order_id': order.id});
 
     ref.invalidate(orderDetailProvider(order.id));
     ref.invalidate(ordersProvider(null));
@@ -278,7 +302,25 @@ class _EtaPickerDialog extends StatefulWidget {
 }
 
 class _EtaPickerDialogState extends State<_EtaPickerDialog> {
-  int _eta = 20;
+  static const _presets = [15, 20, 25];
+  int _selected = 20; // selected preset when not custom
+  bool _custom = false;
+  final _customController = TextEditingController();
+
+  @override
+  void dispose() {
+    _customController.dispose();
+    super.dispose();
+  }
+
+  /// Resolved ETA, or null if custom is chosen but not a valid number.
+  int? get _eta {
+    if (_custom) {
+      final v = int.tryParse(_customController.text.trim());
+      return (v != null && v > 0) ? v : null;
+    }
+    return _selected;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -286,16 +328,85 @@ class _EtaPickerDialogState extends State<_EtaPickerDialog> {
       title: const Text('Set Prep Time'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$_eta minutes',
-              style: Theme.of(context).textTheme.headlineMedium),
-          Slider(
-            value: _eta.toDouble(),
-            min: 5,
-            max: 60,
-            divisions: 11,
-            label: '$_eta min',
-            onChanged: (v) => setState(() => _eta = v.round()),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final m in _presets)
+                ChoiceChip(
+                  label: Text('$m min'),
+                  selected: !_custom && _selected == m,
+                  onSelected: (_) => setState(() {
+                    _custom = false;
+                    _selected = m;
+                  }),
+                ),
+              ChoiceChip(
+                label: const Text('Custom'),
+                selected: _custom,
+                onSelected: (_) => setState(() => _custom = true),
+              ),
+            ],
+          ),
+          if (_custom) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _customController,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Custom prep time',
+                suffixText: 'min',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _eta == null ? null : () => Navigator.pop(context, _eta),
+          child: const Text('Accept'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RejectReasonDialog extends StatefulWidget {
+  @override
+  State<_RejectReasonDialog> createState() => _RejectReasonDialogState();
+}
+
+class _RejectReasonDialogState extends State<_RejectReasonDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reject this order?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('The plates go back to your stock. Optionally add a reason.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Reason (optional)'),
           ),
         ],
       ),
@@ -305,8 +416,11 @@ class _EtaPickerDialogState extends State<_EtaPickerDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () => Navigator.pop(context, _eta),
-          child: const Text('Accept'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Reject'),
         ),
       ],
     );

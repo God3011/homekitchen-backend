@@ -32,6 +32,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { FirebaseService } from '../src/auth/firebase.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { StorageService } from '../src/storage/storage.service';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -86,6 +87,19 @@ class MockNotificationsService {
   }
 }
 
+// Avoids real R2 uploads — returns fake public URLs for signup/dish photos.
+class MockStorageService {
+  get isConfigured() {
+    return true;
+  }
+  uploadImage() {
+    return Promise.resolve('https://r2.test/img.jpg');
+  }
+  uploadImages(files: unknown[]) {
+    return Promise.resolve(files.map(() => 'https://r2.test/img.jpg'));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -93,9 +107,10 @@ class MockNotificationsService {
 /** Mirrors OrdersService.serviceDate() — local midnight, then take its UTC
  *  date string so Prisma stores the same DATE value in Postgres. */
 function todayDateStr(): string {
-  const now = new Date();
-  const local = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return local.toISOString().split('T')[0]; // e.g. "2026-07-12"
+  // Local calendar day as "YYYY-MM-DD" — matches OrdersService.serviceDate(),
+  // which now resolves to UTC-midnight of the local day.
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 }
 
 /** Create / drop the test database via a throw-away PrismaClient aimed at
@@ -153,6 +168,8 @@ describe('E2E: Full order lifecycle', () => {
       .useClass(MockFirebaseService)
       .overrideProvider(NotificationsService)
       .useClass(MockNotificationsService)
+      .overrideProvider(StorageService)
+      .useClass(MockStorageService)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -165,7 +182,7 @@ describe('E2E: Full order lifecycle', () => {
     prisma = moduleRef.get(PrismaService);
 
     // 4. Seed reference data
-    await prisma.platformConfig.create({ data: { id: 1 } }); // defaults: ₹5 fee, ₹200 cap
+    await prisma.platformConfig.create({ data: { id: 1 } }); // defaults: ₹5 fee, ₹200 per-item cap, lowStockThreshold: 3
     await prisma.zone.create({
       data: {
         id: ZONE_ID,
@@ -214,7 +231,10 @@ describe('E2E: Full order lifecycle', () => {
     const res = await request(app.getHttpServer())
       .post('/api/kitchens/signup')
       .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ kitchenName: 'Amma Kitchen', zoneId: ZONE_ID });
+      .field('kitchenName', 'Amma Kitchen')
+      .field('zoneId', ZONE_ID)
+      .attach('kitchenPhotos', Buffer.from('fake-image'), 'kitchen.jpg')
+      .attach('selfPhoto', Buffer.from('fake-image'), 'self.jpg');
 
     expect(res.status).toBe(201);
     kitchenId = res.body.id;
@@ -330,11 +350,168 @@ describe('E2E: Full order lifecycle', () => {
   });
 
   // =====================================================================
-  // Step 5 — Customer places an order
+  // Step 5 — Order placement & business rules
   // =====================================================================
-  it('5a. Order exceeding ₹200 food cap is rejected', async () => {
-    // ₹150 × 2 = ₹300 → over the ₹200 (20000 paise) cap
+  it('5a. ₹250 menu item rejected at creation (per-item price cap)', async () => {
     const res = await request(app.getHttpServer())
+      .post('/api/menu/items')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({
+        name: 'Expensive Dish',
+        categoryId,
+        pricePaise: 25000, // ₹250 > ₹200 cap
+      })
+      .expect(400);
+
+    expect(res.body.message).toContain('per-item cap');
+  });
+
+  it('5b. 3 × ₹150 = ₹450 order SUCCEEDS (no cart cap)', async () => {
+    // Reset plate availability to 20
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({
+        customerId,
+        kitchenId,
+        fulfillment: 'pickup',
+        items: [{ menuItemId, quantity: 3 }],
+      })
+      .expect(201);
+
+    expect(res.body.foodTotalPaise).toBe(45000); // 3 × ₹150
+    expect(res.body.grandTotalPaise).toBe(45500); // + ₹5 platform fee
+  });
+
+  it('5c. 5 plates requested, only 3 remain → 400 insufficient plates', async () => {
+    // Set availability to 3 plates
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 3 })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({
+        customerId,
+        kitchenId,
+        fulfillment: 'pickup',
+        items: [{ menuItemId, quantity: 5 }],
+      })
+      .expect(400);
+
+    expect(res.body.message).toContain('insufficient plates');
+  });
+
+  it('5d. Concurrent orders for last 2 plates → exactly one 201, one 400', async () => {
+    // Set availability to 2 plates
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 2 })
+      .expect(200);
+
+    const [r1, r2] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', 'Bearer customer-test-token')
+        .send({
+          customerId,
+          kitchenId,
+          fulfillment: 'pickup',
+          items: [{ menuItemId, quantity: 2 }],
+        }),
+      request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', 'Bearer customer-test-token')
+        .send({
+          customerId,
+          kitchenId,
+          fulfillment: 'pickup',
+          items: [{ menuItemId, quantity: 2 }],
+        }),
+    ]);
+
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses).toEqual([201, 400]);
+  });
+
+  it('5e. Reject order → platesRemaining restored + isAvailable re-enabled', async () => {
+    // Set availability to 5 plates
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 5 })
+      .expect(200);
+
+    // Place an order for 3 plates
+    const orderRes = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({
+        customerId,
+        kitchenId,
+        fulfillment: 'pickup',
+        items: [{ menuItemId, quantity: 3 }],
+      })
+      .expect(201);
+
+    const rejectOrderId = orderRes.body.id;
+
+    // Verify plates went down to 2
+    const availBefore = await prisma.menuDailyAvailability.findUnique({
+      where: {
+        menuItemId_serviceDate: {
+          menuItemId,
+          serviceDate: new Date(todayDateStr()),
+        },
+      },
+    });
+    expect(availBefore!.platesRemaining).toBe(2);
+
+    // Reject the order
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${rejectOrderId}/reject`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ reason: 'Out of ingredients' })
+      .expect(200);
+
+    // Verify plates restored to 5
+    const availAfter = await prisma.menuDailyAvailability.findUnique({
+      where: {
+        menuItemId_serviceDate: {
+          menuItemId,
+          serviceDate: new Date(todayDateStr()),
+        },
+      },
+    });
+    expect(availAfter!.platesRemaining).toBe(5);
+    expect(availAfter!.isAvailable).toBe(true);
+  });
+
+  it('5f. Order exhausting plates → isAvailable false + sendPush called with stock_alert', async () => {
+    // Set availability to exactly 2 plates
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 2 })
+      .expect(200);
+
+    // Spy on the mock's sendPush
+    const notificationsService = app.get(NotificationsService);
+    const sendPushSpy = jest.spyOn(notificationsService, 'sendPush');
+    sendPushSpy.mockClear();
+
+    // Place order for all 2 plates → sold out
+    await request(app.getHttpServer())
       .post('/api/orders')
       .set('Authorization', 'Bearer customer-test-token')
       .send({
@@ -343,12 +520,76 @@ describe('E2E: Full order lifecycle', () => {
         fulfillment: 'pickup',
         items: [{ menuItemId, quantity: 2 }],
       })
-      .expect(400);
+      .expect(201);
 
-    expect(res.body.message).toContain('cap');
+    // isAvailable should be false now
+    const avail = await prisma.menuDailyAvailability.findUnique({
+      where: {
+        menuItemId_serviceDate: {
+          menuItemId,
+          serviceDate: new Date(todayDateStr()),
+        },
+      },
+    });
+    expect(avail!.platesRemaining).toBe(0);
+    expect(avail!.isAvailable).toBe(false);
+
+    // sendPush should have been called with stock_alert
+    expect(sendPushSpy).toHaveBeenCalledWith(
+      'kitchen',
+      kitchenId,
+      expect.objectContaining({ type: 'stock_alert' }),
+    );
+
+    sendPushSpy.mockRestore();
   });
 
-  it('5b. Valid order: correct totals, handover code, Payment row', async () => {
+  it('5g. Order bringing plates below threshold → sendPush called with low-stock warning', async () => {
+    // Set availability to 5 plates (threshold defaults to 3)
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 5 })
+      .expect(200);
+
+    // Spy on the mock's sendPush
+    const notificationsService = app.get(NotificationsService);
+    const sendPushSpy = jest.spyOn(notificationsService, 'sendPush');
+    sendPushSpy.mockClear();
+
+    // Place order for 3 plates → 2 remaining (below threshold of 3)
+    await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({
+        customerId,
+        kitchenId,
+        fulfillment: 'pickup',
+        items: [{ menuItemId, quantity: 3 }],
+      })
+      .expect(201);
+
+    // sendPush should have been called with low-stock warning
+    expect(sendPushSpy).toHaveBeenCalledWith(
+      'kitchen',
+      kitchenId,
+      expect.objectContaining({
+        type: 'stock_alert',
+        remaining: '2',
+      }),
+    );
+
+    sendPushSpy.mockRestore();
+  });
+
+  it('5h. Valid order: correct totals, handover code, Payment row', async () => {
+    // Reset plates to 20
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
     const res = await request(app.getHttpServer())
       .post('/api/orders')
       .set('Authorization', 'Bearer customer-test-token')
@@ -453,7 +694,8 @@ describe('E2E: Full order lifecycle', () => {
     expect(order.platformFeePaise).toBe(500);
     expect(order.grandTotalPaise).toBe(15500);
     expect(order.etaMinutes).toBe(25);
-    expect(order.handoverCode).toBeTruthy();
+    // Seller-facing responses must NOT expose the handover code (proof-of-pickup).
+    expect(order.handoverCode).toBeUndefined();
     expect(order.items).toHaveLength(1);
     expect(order.items[0].itemName).toBe('Hyderabadi Biryani');
     expect(order.items[0].preferences).toBeDefined();
@@ -466,16 +708,17 @@ describe('E2E: Full order lifecycle', () => {
       .set('Authorization', 'Bearer kitchen-test-token')
       .expect(200);
 
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].status).toBe('completed');
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.every((o: any) => o.status === 'completed')).toBe(true);
 
-    // No received orders remain
-    const empty = await request(app.getHttpServer())
+    // The lifecycle order (5h) should not be among received orders
+    const received = await request(app.getHttpServer())
       .get('/api/kitchens/me/orders?status=received')
       .set('Authorization', 'Bearer kitchen-test-token')
       .expect(200);
 
-    expect(empty.body).toHaveLength(0);
+    const lifecycleOrderInReceived = received.body.find((o: any) => o.id === orderId);
+    expect(lifecycleOrderInReceived).toBeUndefined();
   });
 
   it('6g. Another kitchen CANNOT see this kitchen\'s orders', async () => {
@@ -483,7 +726,10 @@ describe('E2E: Full order lifecycle', () => {
     await request(app.getHttpServer())
       .post('/api/kitchens/signup')
       .set('Authorization', 'Bearer kitchen2-test-token')
-      .send({ kitchenName: 'Other Kitchen', zoneId: ZONE_ID })
+      .field('kitchenName', 'Other Kitchen')
+      .field('zoneId', ZONE_ID)
+      .attach('kitchenPhotos', Buffer.from('fake-image'), 'kitchen.jpg')
+      .attach('selfPhoto', Buffer.from('fake-image'), 'self.jpg')
       .expect(201);
 
     // Second kitchen's order list must be empty

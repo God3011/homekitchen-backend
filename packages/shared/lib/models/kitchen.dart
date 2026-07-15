@@ -3,6 +3,8 @@ class Kitchen {
   final String id;
   final String kitchenName;
   final String? cookName;
+  final String? cookPhotoUrl;
+  final List<String> kitchenPhotoUrls;
   final String phone;
   final String status; // 'pending_review' | 'verified' | 'suspended'
   final String? zoneId;
@@ -18,6 +20,8 @@ class Kitchen {
     required this.id,
     required this.kitchenName,
     this.cookName,
+    this.cookPhotoUrl,
+    this.kitchenPhotoUrls = const [],
     required this.phone,
     required this.status,
     this.zoneId,
@@ -35,6 +39,10 @@ class Kitchen {
       id: json['id'] as String,
       kitchenName: json['kitchenName'] as String,
       cookName: json['cookName'] as String?,
+      cookPhotoUrl: json['cookPhotoUrl'] as String?,
+      kitchenPhotoUrls:
+          (json['kitchenPhotoUrls'] as List<dynamic>?)?.cast<String>() ??
+              const [],
       phone: json['phone'] as String,
       status: json['status'] as String,
       zoneId: json['zoneId'] as String?,
@@ -55,6 +63,8 @@ class Kitchen {
       'id': id,
       'kitchenName': kitchenName,
       'cookName': cookName,
+      'cookPhotoUrl': cookPhotoUrl,
+      'kitchenPhotoUrls': kitchenPhotoUrls,
       'phone': phone,
       'status': status,
       'zoneId': zoneId,

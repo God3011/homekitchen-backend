@@ -1,7 +1,10 @@
 import {
   Body, Controller, Delete, Get, Param, Patch, Post, Put,
+  UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MenuService } from './menu.service';
+import { UploadFile } from '../storage/storage.service';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import {
@@ -85,6 +88,19 @@ export class MenuController {
     @Param('id') id: string,
   ) {
     return this.menu.deactivateItem(user.userId, id);
+  }
+
+  @Roles('kitchen')
+  @Post('items/:id/photo')
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  uploadItemPhoto(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @UploadedFile() photo: UploadFile,
+  ) {
+    return this.menu.uploadItemPhoto(user.userId, id, photo);
   }
 
   @Roles('kitchen')

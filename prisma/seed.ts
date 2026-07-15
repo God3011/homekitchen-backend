@@ -2,11 +2,11 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Single-row platform config: ₹5 fee, ₹50/day seller fee, ₹200 cap.
+  // Single-row platform config: ₹5 fee, ₹50/day seller fee, ₹200 per-item price cap.
   await prisma.platformConfig.upsert({
     where: { id: 1 },
     update: {},
-    create: { id: 1 },
+    create: { id: 1, lowStockThreshold: 3 },
   });
 
   // One starter zone so discovery has something to return in dev.

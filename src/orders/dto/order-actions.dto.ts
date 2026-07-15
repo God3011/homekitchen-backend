@@ -20,3 +20,9 @@ export class RejectOrderDto {
   @IsString()
   reason?: string;
 }
+
+export class CancelOrderDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}

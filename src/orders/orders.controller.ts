@@ -3,6 +3,7 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
   AcceptOrderDto,
+  CancelOrderDto,
   ConfirmHandoverDto,
   RejectOrderDto,
 } from './dto/order-actions.dto';
@@ -30,6 +31,11 @@ export class OrdersController {
   @Patch(':id/reject')
   reject(@Param('id') id: string, @Body() dto: RejectOrderDto) {
     return this.orders.reject(id, dto.reason);
+  }
+
+  @Patch(':id/cancel')
+  cancel(@Param('id') id: string, @Body() dto: CancelOrderDto) {
+    return this.orders.cancel(id, dto.reason);
   }
 
   @Patch(':id/ready')

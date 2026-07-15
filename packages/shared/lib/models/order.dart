@@ -114,7 +114,9 @@ class Order {
   final int deliveryFeePaise;
   final int grandTotalPaise;
   final int? etaMinutes;
-  final String handoverCode;
+  // Null on seller-facing responses — the code is only ever sent to the
+  // customer (proof of pickup). The seller enters what the customer tells them.
+  final String? handoverCode;
   final DateTime placedAt;
   final DateTime? acceptedAt;
   final DateTime? readyAt;
@@ -133,7 +135,7 @@ class Order {
     required this.deliveryFeePaise,
     required this.grandTotalPaise,
     this.etaMinutes,
-    required this.handoverCode,
+    this.handoverCode,
     required this.placedAt,
     this.acceptedAt,
     this.readyAt,
@@ -154,7 +156,7 @@ class Order {
       deliveryFeePaise: json['deliveryFeePaise'] as int,
       grandTotalPaise: json['grandTotalPaise'] as int,
       etaMinutes: json['etaMinutes'] as int?,
-      handoverCode: json['handoverCode'] as String,
+      handoverCode: json['handoverCode'] as String?,
       placedAt: DateTime.parse(json['placedAt'] as String),
       acceptedAt: json['acceptedAt'] != null
           ? DateTime.parse(json['acceptedAt'] as String)

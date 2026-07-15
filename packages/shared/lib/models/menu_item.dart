@@ -1,25 +1,18 @@
 /// A single preference toggle on a menu item.
+/// Identified by (menuItemId, preference) on the backend — there is no `id`.
 class MenuItemPreference {
-  final String id;
   final String preference;
 
-  const MenuItemPreference({
-    required this.id,
-    required this.preference,
-  });
+  const MenuItemPreference({required this.preference});
 
   factory MenuItemPreference.fromJson(Map<String, dynamic> json) {
     return MenuItemPreference(
-      id: json['id'] as String,
       preference: json['preference'] as String,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'preference': preference,
-    };
+    return {'preference': preference};
   }
 }
 
@@ -31,6 +24,7 @@ class MenuItem {
   final String name;
   final String? categoryId;
   final int pricePaise;
+  final String? photoUrl;
   final bool isActive;
   final List<MenuItemPreference> preferences;
 
@@ -40,6 +34,7 @@ class MenuItem {
     required this.name,
     this.categoryId,
     required this.pricePaise,
+    this.photoUrl,
     required this.isActive,
     this.preferences = const [],
   });
@@ -51,6 +46,7 @@ class MenuItem {
       name: json['name'] as String,
       categoryId: json['categoryId'] as String?,
       pricePaise: json['pricePaise'] as int,
+      photoUrl: json['photoUrl'] as String?,
       isActive: json['isActive'] as bool,
       preferences: (json['preferences'] as List<dynamic>?)
               ?.map((e) =>
@@ -67,6 +63,7 @@ class MenuItem {
       'name': name,
       'categoryId': categoryId,
       'pricePaise': pricePaise,
+      'photoUrl': photoUrl,
       'isActive': isActive,
       'preferences': preferences.map((e) => e.toJson()).toList(),
     };

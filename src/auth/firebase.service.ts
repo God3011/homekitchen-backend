@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   App,
+  cert,
   getApps,
   initializeApp,
   applicationDefault,
@@ -21,14 +22,25 @@ export class FirebaseService implements OnModuleInit {
       app = getApps()[0]!;
     } else {
       const projectId = this.config.get<string>('FIREBASE_PROJECT_ID');
+      const clientEmail = this.config.get<string>('FIREBASE_CLIENT_EMAIL');
+      const privateKey = this.config.get<string>('FIREBASE_PRIVATE_KEY');
 
-      // In production, set GOOGLE_APPLICATION_CREDENTIALS env var pointing
-      // to the service-account JSON. Locally, projectId alone works with
-      // the Firebase emulator.
-      app = initializeApp({
-        credential: applicationDefault(),
-        projectId,
-      });
+      if (clientEmail && privateKey) {
+        // Use individual env vars from .env
+        app = initializeApp({
+          credential: cert({
+            projectId,
+            clientEmail,
+            privateKey: privateKey.replace(/\\n/g, '\n'),
+          }),
+        });
+      } else {
+        // Fall back to GOOGLE_APPLICATION_CREDENTIALS JSON file
+        app = initializeApp({
+          credential: applicationDefault(),
+          projectId,
+        });
+      }
     }
 
     this.auth = getAuth(app);

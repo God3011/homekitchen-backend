@@ -64,13 +64,14 @@ enum DocType {
 }
 
 // ---------------------------------------------------------------------------
-// Platform config (single row: ₹5 customer fee, ₹50/day seller fee, ₹200 cap)
+// Platform config (single row: ₹5 customer fee, ₹50/day seller fee, ₹200 per-item price cap)
 // ---------------------------------------------------------------------------
 model PlatformConfig {
   id                   Int      @id @default(1)
   platformFeePaise     Int      @default(500)   @map("platform_fee_paise")
   sellerDailyFeePaise  Int      @default(5000)  @map("seller_daily_fee_paise")
-  orderCapPaise        Int      @default(20000) @map("order_cap_paise")
+  itemPriceCapPaise    Int      @default(20000) @map("item_price_cap_paise")
+  lowStockThreshold    Int      @default(3)     @map("low_stock_threshold") /// Push alert when plates_remaining <= this
   currency             String   @default("INR") @db.Char(3)
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -127,6 +128,7 @@ model Kitchen {
   kitchenName   String        @map("kitchen_name")
   cookName      String?       @map("cook_name")
   cookPhotoUrl  String?       @map("cook_photo_url")
+  kitchenPhotoUrls String[]   @map("kitchen_photo_urls")
   story         String?
   signatureDish String?       @map("signature_dish")
   addressLine   String?       @map("address_line")
@@ -256,7 +258,7 @@ model MenuDailyAvailability {
 }
 
 // ---------------------------------------------------------------------------
-// Orders  (food_total <= ₹200) + platform_fee (₹5) + delivery_fee = grand_total
+// Orders  food_total + platform_fee (₹5) + delivery_fee = grand_total
 // ---------------------------------------------------------------------------
 model Order {
   id               String          @id @default(uuid()) @db.Uuid

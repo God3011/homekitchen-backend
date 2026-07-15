@@ -1,16 +1,43 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared/shared.dart';
 
+import 'config.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/push_service.dart';
+
+class _AllowAllHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (cert, host, port) => true;
+  }
+}
 
 Future<void> main() async {
+  HttpOverrides.global = _AllowAllHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Debug: test connectivity
+  debugPrint('Testing: $apiBaseUrl/health');
+  try {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 5);
+    final request = await client.getUrl(Uri.parse('$apiBaseUrl/health'));
+    final response = await request.close();
+    debugPrint('  OK: ${response.statusCode}');
+    client.close();
+  } catch (e) {
+    debugPrint('  FAIL: $e');
+  }
+
   await Firebase.initializeApp();
+  await initPush();
   runApp(const ProviderScope(child: HomelyKitchenApp()));
 }
 
