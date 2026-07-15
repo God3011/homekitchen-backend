@@ -16,6 +16,7 @@ import {
   UploadDocumentDto,
 } from './dto/kitchen-actions.dto';
 import { StorageService, UploadFile } from '../storage/storage.service';
+import { ZonesService } from '../zones/zones.service';
 
 /** Photo files submitted with the multipart signup request. */
 export interface SignupFiles {
@@ -29,7 +30,22 @@ export class KitchensService {
     private readonly prisma: PrismaService,
     private readonly firebase: FirebaseService,
     private readonly storage: StorageService,
+    private readonly zones: ZonesService,
   ) {}
+
+  /** Zone from GPS when provided (containing zone or a new one), else the
+   *  explicit zoneId. Server-authoritative so the client can't mis-assign. */
+  private async resolveZoneId(dto: {
+    lat?: number | null;
+    lng?: number | null;
+    zoneId?: string;
+  }): Promise<string | undefined> {
+    if (dto.lat != null && dto.lng != null) {
+      const zone = await this.zones.resolveOrCreate(dto.lat, dto.lng);
+      return zone.id;
+    }
+    return dto.zoneId;
+  }
 
   // ── Signup (public) ──────────────────────────────────────────────────
   async signup(idToken: string, dto: CreateKitchenDto, files: SignupFiles = {}) {
@@ -89,7 +105,7 @@ export class KitchensService {
         addressLine: dto.addressLine,
         lat: dto.lat,
         lng: dto.lng,
-        zoneId: dto.zoneId,
+        zoneId: await this.resolveZoneId(dto),
         languagePref: dto.languagePref,
       },
     });
@@ -103,10 +119,11 @@ export class KitchensService {
     });
   }
 
-  updateProfile(kitchenId: string, dto: UpdateKitchenDto) {
+  async updateProfile(kitchenId: string, dto: UpdateKitchenDto) {
+    const zoneId = await this.resolveZoneId(dto);
     return this.prisma.kitchen.update({
       where: { id: kitchenId },
-      data: dto,
+      data: { ...dto, zoneId },
     });
   }
 

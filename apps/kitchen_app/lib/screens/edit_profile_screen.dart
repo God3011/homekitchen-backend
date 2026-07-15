@@ -4,6 +4,7 @@ import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
+import '../widgets/address_picker.dart';
 
 /// Edit the kitchen's text profile fields (PATCH /kitchens/me).
 class EditProfileScreen extends ConsumerStatefulWidget {
@@ -21,9 +22,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       TextEditingController(text: widget.kitchen.cookName ?? '');
   late final _signatureDish =
       TextEditingController(text: widget.kitchen.signatureDish ?? '');
-  late final _address =
-      TextEditingController(text: widget.kitchen.addressLine ?? '');
   late final _story = TextEditingController(text: widget.kitchen.story ?? '');
+  AddressResult? _addr;
   bool _saving = false;
   String? _error;
 
@@ -32,7 +32,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _kitchenName.dispose();
     _cookName.dispose();
     _signatureDish.dispose();
-    _address.dispose();
     _story.dispose();
     super.dispose();
   }
@@ -52,8 +51,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         'kitchenName': name,
         'cookName': _cookName.text.trim(),
         'signatureDish': _signatureDish.text.trim(),
-        'addressLine': _address.text.trim(),
         'story': _story.text.trim(),
+        if (_addr != null) ...{
+          'addressLine': _addr!.address,
+          'lat': _addr!.lat,
+          'lng': _addr!.lng,
+        },
       });
       ref.invalidate(kitchenProfileProvider);
       if (mounted) {
@@ -79,7 +82,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           _field(_kitchenName, 'Kitchen Name *'),
           _field(_cookName, 'Your Name'),
           _field(_signatureDish, 'Signature Dish'),
-          _field(_address, 'Address'),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child:
+                Text('Address', style: Theme.of(context).textTheme.titleSmall),
+          ),
+          AddressPicker(
+            initialLat: widget.kitchen.lat,
+            initialLng: widget.kitchen.lng,
+            initialAddress: widget.kitchen.addressLine,
+            onChanged: (r) => setState(() => _addr = r),
+          ),
+          const SizedBox(height: 16),
           _field(_story, 'Your Story', maxLines: 3),
           const SizedBox(height: 24),
           if (_error != null) ...[

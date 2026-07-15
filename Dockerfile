@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 COPY prisma ./prisma
 RUN npm ci
-RUN npx prisma generate
+RUN npx prisma@6 generate
 COPY . .
 RUN npm run build
 
@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci --omit=dev && npx prisma generate
+RUN npm ci --omit=dev && npx prisma@6 generate
 COPY --from=build /app/dist ./dist
 EXPOSE 3000
 # Apply migrations on boot, then start.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma@6 migrate deploy && node dist/src/main"]

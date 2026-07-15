@@ -77,16 +77,15 @@ class ApiClient {
     return response.data!;
   }
 
-  /// PUT with an optional JSON body.
-  Future<Map<String, dynamic>> put(
+  /// PUT with an optional JSON body. Returns the decoded body as-is (some
+  /// endpoints reply with an object, others with an array), so callers must
+  /// not assume a Map.
+  Future<dynamic> put(
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final response = await _dio.put<Map<String, dynamic>>(
-      path,
-      data: body,
-    );
-    return response.data!;
+    final response = await _dio.put<dynamic>(path, data: body);
+    return response.data;
   }
 
   /// DELETE a resource; returns the response body (may be empty).

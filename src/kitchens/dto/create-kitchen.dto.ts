@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsNumber, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateKitchenDto {
   @IsString()
@@ -21,10 +22,12 @@ export class CreateKitchenDto {
   addressLine?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   lat?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   lng?: number;
 

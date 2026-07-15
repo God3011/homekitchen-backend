@@ -71,7 +71,6 @@ class _DashboardPage extends ConsumerWidget {
     final kitchenName = profile.valueOrNull?.kitchenName ?? 'My Kitchen';
     final isCooking = dailyStatus.valueOrNull?['isCooking'] == true;
     final orders = ordersAsync.valueOrNull ?? const <Order>[];
-    final orderCount = orders.length;
     final now = DateTime.now();
     // Compare in LOCAL time — API timestamps are UTC, so convert before
     // comparing the calendar day (otherwise an order at 01:xx IST reads as
@@ -80,6 +79,10 @@ class _DashboardPage extends ConsumerWidget {
       final l = d.toLocal();
       return l.year == now.year && l.month == now.month && l.day == now.day;
     }
+
+    // "Today's Orders" = orders placed today (any status) — matches the label
+    // and stays consistent with the earnings filter below.
+    final orderCount = orders.where((o) => isToday(o.placedAt)).length;
 
     // Earnings = food total of orders completed today (platform fee is not the
     // kitchen's; it goes to Homely).

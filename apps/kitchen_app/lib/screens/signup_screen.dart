@@ -7,6 +7,7 @@ import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
+import '../widgets/address_picker.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -22,6 +23,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
   final List<XFile> _kitchenPhotos = [];
   XFile? _selfPhoto;
+  AddressResult? _addr;
 
   bool _loading = false;
   String? _error;
@@ -75,6 +77,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       final fields = <String, String>{'kitchenName': name};
       final cookName = _cookNameController.text.trim();
       if (cookName.isNotEmpty) fields['cookName'] = cookName;
+      if (_addr != null) {
+        if (_addr!.address.isNotEmpty) fields['addressLine'] = _addr!.address;
+        fields['lat'] = _addr!.lat.toString();
+        fields['lng'] = _addr!.lng.toString();
+      }
 
       final result = await api.postMultipart(
         '/kitchens/signup',
@@ -133,6 +140,12 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
             decoration: const InputDecoration(labelText: 'Your Name'),
             textCapitalization: TextCapitalization.words,
           ),
+          const SizedBox(height: 24),
+
+          // --- Address ---
+          Text('Address', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          AddressPicker(onChanged: (r) => setState(() => _addr = r)),
           const SizedBox(height: 24),
 
           // --- Kitchen photos (multiple, required) ---

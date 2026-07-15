@@ -10,6 +10,8 @@ import { PaymentsModule } from './payments/payments.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
+import { ZonesModule } from './zones/zones.module';
+import { GeocodeModule } from './geocode/geocode.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { StorageModule } from './storage/storage.module';
     OrdersModule,
     PaymentsModule,
     NotificationsModule,
+    ZonesModule,
+    GeocodeModule,
   ],
   controllers: [HealthController],
 })
