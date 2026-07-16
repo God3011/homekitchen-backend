@@ -1,4 +1,6 @@
 import 'order_status.dart';
+import 'kitchen.dart';
+import 'rating.dart';
 
 /// A single preference on an order item (snapshot from menu).
 class OrderItemPreference {
@@ -121,8 +123,13 @@ class Order {
   final DateTime? acceptedAt;
   final DateTime? readyAt;
   final DateTime? completedAt;
+  final String? rejectReason;
+  final String? cancelReason;
   final List<OrderItem> items;
   final Payment? payment;
+  // Present when the endpoint joins the kitchen / rating (order detail).
+  final Kitchen? kitchen;
+  final Rating? rating;
 
   const Order({
     required this.id,
@@ -140,8 +147,12 @@ class Order {
     this.acceptedAt,
     this.readyAt,
     this.completedAt,
+    this.rejectReason,
+    this.cancelReason,
     this.items = const [],
     this.payment,
+    this.kitchen,
+    this.rating,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -167,12 +178,20 @@ class Order {
       completedAt: json['completedAt'] != null
           ? DateTime.parse(json['completedAt'] as String)
           : null,
+      rejectReason: json['rejectReason'] as String?,
+      cancelReason: json['cancelReason'] as String?,
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       payment: json['payment'] != null
           ? Payment.fromJson(json['payment'] as Map<String, dynamic>)
+          : null,
+      kitchen: json['kitchen'] != null
+          ? Kitchen.fromJson(json['kitchen'] as Map<String, dynamic>)
+          : null,
+      rating: json['rating'] != null
+          ? Rating.fromJson(json['rating'] as Map<String, dynamic>)
           : null,
     );
   }

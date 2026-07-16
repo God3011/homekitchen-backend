@@ -17,6 +17,7 @@ import {
 } from './dto/kitchen-actions.dto';
 import { StorageService, UploadFile } from '../storage/storage.service';
 import { ZonesService } from '../zones/zones.service';
+import { RequestUser } from '../auth/decorators';
 
 /** Photo files submitted with the multipart signup request. */
 export interface SignupFiles {
@@ -243,16 +244,46 @@ export class KitchensService {
   }
 
   // ── Customer-facing ──────────────────────────────────────────────────
-  list(zoneId?: string) {
-    const today = new Date();
+  /**
+   * Discovery list: verified kitchens cooking today in a zone. Enriched with a
+   * server-side rating average/count and, when the caller passes their GPS,
+   * the straight-line distance (sorted nearest-first). `openNow` filters to
+   * kitchens currently within their operating hours. If no `zoneId` is given
+   * and the caller is a customer, their home zone is used by default.
+   */
+  async list(
+    user: RequestUser,
+    opts: {
+      zoneId?: string;
+      openNow?: boolean;
+      lat?: number;
+      lng?: number;
+    } = {},
+  ) {
+    const now = new Date();
     // UTC-midnight of the local calendar day so it matches stored dates.
     // Local midnight (new Date(y,m,d)) resolves to the previous UTC day in
     // positive-offset zones like IST — see OrdersService.serviceDate().
     const serviceDate = new Date(
-      Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()),
+      Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
     );
+    const dayOfWeek = now.getDay(); // 0=Sun .. 6=Sat
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')}`;
 
-    return this.prisma.kitchen.findMany({
+    // Default to the customer's home zone when none is specified.
+    let zoneId = opts.zoneId;
+    if (!zoneId && user.role === 'customer') {
+      const me = await this.prisma.customer.findUnique({
+        where: { id: user.userId },
+        select: { homeZoneId: true },
+      });
+      zoneId = me?.homeZoneId ?? undefined;
+    }
+
+    const kitchens = await this.prisma.kitchen.findMany({
       where: {
         status: KitchenStatus.verified,
         ...(zoneId ? { zoneId } : {}),
@@ -269,12 +300,49 @@ export class KitchensService {
         lat: true,
         lng: true,
         ratings: { select: { stars: true } },
+        hours: {
+          where: { dayOfWeek },
+          select: { openTime: true, closeTime: true },
+        },
       },
     });
+
+    const hasGps = opts.lat != null && opts.lng != null;
+
+    let result = kitchens.map(({ ratings, hours, ...k }) => {
+      const ratingCount = ratings.length;
+      const ratingAvg = ratingCount
+        ? ratings.reduce((sum, r) => sum + r.stars, 0) / ratingCount
+        : null;
+      const today = hours[0];
+      const isOpenNow =
+        !!today &&
+        currentTime >= today.openTime &&
+        currentTime < today.closeTime;
+      const distanceM =
+        hasGps && k.lat != null && k.lng != null
+          ? Math.round(this.zones.distanceM(opts.lat!, opts.lng!, k.lat, k.lng))
+          : null;
+      return { ...k, ratingAvg, ratingCount, isOpenNow, distanceM };
+    });
+
+    if (opts.openNow) {
+      result = result.filter((k) => k.isOpenNow);
+    }
+
+    // Nearest-first when GPS is known; otherwise best-rated first.
+    result.sort((a, b) => {
+      if (a.distanceM != null && b.distanceM != null) {
+        return a.distanceM - b.distanceM;
+      }
+      return (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0);
+    });
+
+    return result;
   }
 
-  findOne(kitchenId: string) {
-    return this.prisma.kitchen.findUniqueOrThrow({
+  async findOne(kitchenId: string) {
+    const kitchen = await this.prisma.kitchen.findUniqueOrThrow({
       where: { id: kitchenId },
       include: {
         zone: true,
@@ -286,5 +354,18 @@ export class KitchensService {
         },
       },
     });
+
+    // Rating summary is derived across ALL ratings, not just the 20 shown.
+    const agg = await this.prisma.rating.aggregate({
+      where: { kitchenId },
+      _avg: { stars: true },
+      _count: true,
+    });
+
+    return {
+      ...kitchen,
+      ratingAvg: agg._avg.stars,
+      ratingCount: agg._count,
+    };
   }
 }

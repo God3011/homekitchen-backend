@@ -26,3 +26,16 @@ export class CancelOrderDto {
   @IsString()
   reason?: string;
 }
+
+export class RateOrderDto {
+  // Post-pickup star rating (1–5) + optional comment.
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  stars: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  comment?: string;
+}

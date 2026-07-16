@@ -211,11 +211,14 @@ export class MenuService {
 
   // ── Customer-facing ──────────────────────────────────────────────────
   async getKitchenMenu(kitchenId: string) {
-    const today = new Date();
+    // UTC-midnight of the local calendar day, so today's availability rows match
+    // how they're stored and how OrdersService.serviceDate() reads them. Using
+    // local midnight (new Date(y,m,d)) resolves to the PREVIOUS UTC day in
+    // positive-offset zones like IST — which showed yesterday's stock and made
+    // orders fail with "insufficient plates".
+    const now = new Date();
     const serviceDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
+      Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
     );
 
     const [categories, uncategorized] = await Promise.all([

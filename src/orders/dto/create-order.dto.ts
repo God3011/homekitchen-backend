@@ -19,9 +19,7 @@ class OrderItemInput {
 }
 
 export class CreateOrderDto {
-  @IsUUID()
-  customerId: string;
-
+  // customerId is taken from the authenticated user, never the request body.
   @IsUUID()
   kitchenId: string;
 

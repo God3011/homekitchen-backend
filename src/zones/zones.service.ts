@@ -74,6 +74,11 @@ export class ZonesService {
     });
   }
 
+  /** Public great-circle distance between two lat/lng points, in metres. */
+  distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    return this.haversineM(lat1, lng1, lat2, lng2);
+  }
+
   /** Great-circle distance between two lat/lng points, in metres. */
   private haversineM(
     lat1: number,

@@ -4,7 +4,7 @@ import 'package:shared/shared.dart';
 import '../config.dart';
 
 final apiClientProvider = Provider<ApiClient>((_) {
-  return ApiClient(baseUrl: apiBaseUrl);
+  return ApiClient(baseUrl: apiBaseUrl, appRole: 'kitchen');
 });
 
 /// Daily status for today (is the kitchen cooking?).

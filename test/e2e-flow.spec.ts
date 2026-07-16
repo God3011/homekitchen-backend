@@ -33,6 +33,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { FirebaseService } from '../src/auth/firebase.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { StorageService } from '../src/storage/storage.service';
+import { RazorpayService } from '../src/payments/razorpay.service';
+import { OrdersService } from '../src/orders/orders.service';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -49,6 +51,10 @@ const DECODED_TOKENS: Record<string, { uid: string; phone_number?: string }> = {
   'kitchen-test-token': { uid: 'fb-kitchen-001', phone_number: '+919876543210' },
   'kitchen2-test-token': { uid: 'fb-kitchen-002', phone_number: '+919876543299' },
   'customer-test-token': { uid: 'fb-customer-001' },
+  // Signs up via POST /api/customers/signup during the test (needs a phone).
+  'customer2-test-token': { uid: 'fb-customer-002', phone_number: '+919876500002' },
+  // One UID registered as BOTH a customer and a kitchen (dual-role test).
+  'dual-test-token': { uid: 'fb-dual-001', phone_number: '+919876500009' },
   'admin-test-token': { uid: 'fb-admin-001' },
 };
 
@@ -84,6 +90,33 @@ class MockNotificationsService {
   }
   notifyOrderEvent() {
     return Promise.resolve();
+  }
+}
+
+// Mocks the Razorpay SDK so payments can be exercised without live keys.
+// Signatures always "verify" — we're testing our flow, not Razorpay's crypto.
+class MockRazorpayService {
+  onModuleInit() {
+    /* no-op — skip SDK client init */
+  }
+  get isConfigured() {
+    return true;
+  }
+  get publicKeyId() {
+    return 'rzp_test_mock';
+  }
+  createOrder(amountPaise: number, receipt: string) {
+    return Promise.resolve({
+      id: `order_mock_${receipt}`,
+      amount: amountPaise,
+      currency: 'INR',
+    });
+  }
+  verifyPaymentSignature() {
+    return true;
+  }
+  verifyWebhookSignature() {
+    return true;
   }
 }
 
@@ -137,6 +170,7 @@ describe('E2E: Full order lifecycle', () => {
   const ZONE_ID = '54653fb6-c8dc-47b9-a736-20261b5c889e';
   let kitchenId: string;
   let customerId: string;
+  let customer2Id: string;
   let categoryId: string;
   let menuItemId: string;
   let orderId: string;
@@ -170,9 +204,13 @@ describe('E2E: Full order lifecycle', () => {
       .useClass(MockNotificationsService)
       .overrideProvider(StorageService)
       .useClass(MockStorageService)
+      .overrideProvider(RazorpayService)
+      .useClass(MockRazorpayService)
       .compile();
 
-    app = moduleRef.createNestApplication();
+    // rawBody: true matches production (src/main.ts) so the Razorpay webhook
+    // can read the raw payload for signature verification.
+    app = moduleRef.createNestApplication({ rawBody: true });
     app.setGlobalPrefix('api');
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
@@ -347,6 +385,48 @@ describe('E2E: Full order lifecycle', () => {
     const found = res.body.find((k: any) => k.id === kitchenId);
     expect(found).toBeTruthy();
     expect(found.kitchenName).toBe('Amma Kitchen');
+  });
+
+  // =====================================================================
+  // Step 4b — Customer onboarding via POST /api/customers/signup
+  // =====================================================================
+  it('4b. New customer signs up (resolves home zone from GPS)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/customers/signup')
+      .set('Authorization', 'Bearer customer2-test-token')
+      .send({ name: 'Second Customer', lat: 17.4401, lng: 78.3489 })
+      .expect(201);
+
+    customer2Id = res.body.id;
+    expect(res.body.name).toBe('Second Customer');
+    expect(res.body.phone).toBe('+919876500002');
+    expect(res.body.firebaseUid).toBe('fb-customer-002');
+    // GPS falls inside the seeded Gachibowli zone → assigned to it.
+    expect(res.body.homeZoneId).toBe(ZONE_ID);
+  });
+
+  it('4c. Duplicate signup for same user → 409', async () => {
+    await request(app.getHttpServer())
+      .post('/api/customers/signup')
+      .set('Authorization', 'Bearer customer2-test-token')
+      .send({ name: 'Second Customer' })
+      .expect(409);
+  });
+
+  it('4d. Customer reads and updates own profile', async () => {
+    const me = await request(app.getHttpServer())
+      .get('/api/customers/me')
+      .set('Authorization', 'Bearer customer2-test-token')
+      .expect(200);
+    expect(me.body.id).toBe(customer2Id);
+
+    const updated = await request(app.getHttpServer())
+      .patch('/api/customers/me')
+      .set('Authorization', 'Bearer customer2-test-token')
+      .send({ name: 'Renamed Customer', whatsappOptIn: true })
+      .expect(200);
+    expect(updated.body.name).toBe('Renamed Customer');
+    expect(updated.body.whatsappOptIn).toBe(true);
   });
 
   // =====================================================================
@@ -757,5 +837,506 @@ describe('E2E: Full order lifecycle', () => {
       'ready',
       'completed',
     ]);
+  });
+
+  // =====================================================================
+  // Step 8 — GET /orders/:id ownership + handover-code visibility
+  // =====================================================================
+  it('8a. Owning customer sees the order WITH its handover code', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/orders/${orderId}`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+
+    expect(res.body.id).toBe(orderId);
+    // The customer is the one who reads the code aloud at pickup.
+    expect(res.body.handoverCode).toBe(handoverCode);
+  });
+
+  it('8b. Owning kitchen sees the order WITHOUT the handover code', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/orders/${orderId}`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(res.body.id).toBe(orderId);
+    expect(res.body.handoverCode).toBeUndefined();
+  });
+
+  it('8c. A non-owning customer cannot read the order → 403', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/orders/${orderId}`)
+      .set('Authorization', 'Bearer customer2-test-token')
+      .expect(403);
+  });
+
+  // =====================================================================
+  // Step 9 — Authorization hardening on order actions
+  // =====================================================================
+  it('9a. A kitchen cannot place an order (customer-only) → 403', async () => {
+    await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(403);
+  });
+
+  it('9b. A customer cannot accept an order (kitchen-only) → 403', async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${orderId}/accept`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ etaMinutes: 10 })
+      .expect(403);
+  });
+
+  it('9c. A different kitchen cannot act on this order → 403', async () => {
+    // Place a fresh received order to act on.
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+    const fresh = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+
+    // kitchen2 (from step 6g) does not own it.
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${fresh.body.id}/reject`)
+      .set('Authorization', 'Bearer kitchen2-test-token')
+      .send({ reason: 'not mine' })
+      .expect(403);
+
+    // The order's real owner cancels it (customer action) to clean up plates.
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${fresh.body.id}/cancel`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ reason: 'cleanup' })
+      .expect(200);
+  });
+
+  // =====================================================================
+  // Step 10 — Ratings (completed order only, one per order)
+  // =====================================================================
+  it('10a. A non-owning customer cannot rate the order → 403', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/orders/${orderId}/rating`)
+      .set('Authorization', 'Bearer customer2-test-token')
+      .send({ stars: 5 })
+      .expect(403);
+  });
+
+  it('10b. Owning customer rates the completed order', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/api/orders/${orderId}/rating`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ stars: 5, comment: 'Delicious!' })
+      .expect(201);
+
+    expect(res.body.stars).toBe(5);
+    expect(res.body.kitchenId).toBe(kitchenId);
+  });
+
+  it('10c. Rating the same order twice → 409', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/orders/${orderId}/rating`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ stars: 4 })
+      .expect(409);
+  });
+
+  it('10d. Kitchen detail exposes server-side rating average', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/kitchens/${kitchenId}`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+
+    expect(res.body.ratingCount).toBe(1);
+    expect(res.body.ratingAvg).toBe(5);
+  });
+
+  // =====================================================================
+  // Step 11 — Favorites
+  // =====================================================================
+  it('11a. Customer favorites a kitchen (idempotent)', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/favorites/${kitchenId}`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(201);
+    // Repeat → still 201, no duplicate.
+    await request(app.getHttpServer())
+      .post(`/api/favorites/${kitchenId}`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(201);
+  });
+
+  it('11b. Favorites list returns the kitchen with a rating summary', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/favorites')
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].kitchenId).toBe(kitchenId);
+    expect(res.body[0].kitchen.ratingAvg).toBe(5);
+  });
+
+  it('11c. Favoriting an unknown kitchen → 404', async () => {
+    await request(app.getHttpServer())
+      .post('/api/favorites/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(404);
+  });
+
+  it('11d. Customer unfavorites the kitchen', async () => {
+    await request(app.getHttpServer())
+      .delete(`/api/favorites/${kitchenId}`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/favorites')
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+    expect(res.body).toHaveLength(0);
+  });
+
+  // =====================================================================
+  // Step 11e — Customer order history (GET /customers/me/orders)
+  // =====================================================================
+  it('11e. Customer lists own orders incl. the completed one', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/customers/me/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+
+    expect(Array.isArray(res.body)).toBe(true);
+    const completed = res.body.find((o: any) => o.id === orderId);
+    expect(completed).toBeTruthy();
+    expect(completed.status).toBe('completed');
+    expect(completed.kitchen).toBeTruthy();
+    // The customer's own orders carry the rating they left in step 10.
+    expect(completed.rating?.stars).toBe(5);
+
+    // A different customer does not see these orders.
+    const other = await request(app.getHttpServer())
+      .get('/api/customers/me/orders')
+      .set('Authorization', 'Bearer customer2-test-token')
+      .expect(200);
+    expect(other.body.find((o: any) => o.id === orderId)).toBeUndefined();
+  });
+
+  // =====================================================================
+  // Step 12 — Order-event pushes fire on every lifecycle transition
+  // =====================================================================
+  it('12. lifecycle pushes fire (received now waits for payment, not placement)', async () => {
+    // Reset plates so the order can be placed.
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const notifications = app.get(NotificationsService);
+    const spy = jest.spyOn(notifications, 'notifyOrderEvent');
+    spy.mockClear();
+
+    const placed = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+    const id = placed.body.id;
+    const code = placed.body.handoverCode;
+    // Placing an order no longer notifies the kitchen — that waits for payment
+    // capture (see PaymentsService), so no "received" push fires here.
+    expect(spy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'received' }),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${id}/accept`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ etaMinutes: 20 })
+      .expect(200);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ event: 'preparing', orderId: id }));
+
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${id}/ready`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    // "ready" carries the customer phone for the WhatsApp fallback.
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ready', orderId: id, customerPhone: expect.any(String) }),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${id}/handover`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ code })
+      .expect(200);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ event: 'completed', orderId: id }));
+
+    spy.mockRestore();
+  });
+
+  // =====================================================================
+  // Step 12b — One Firebase UID can be both customer AND kitchen
+  // =====================================================================
+  it('12b. X-Client-App header resolves the right role for a dual-registered UID', async () => {
+    const uid = DECODED_TOKENS['dual-test-token'].uid;
+    // Same UID + phone in BOTH tables (phone is unique per-table, not global).
+    await prisma.customer.create({
+      data: { firebaseUid: uid, phone: '+919876500009', name: 'Dual Person' },
+    });
+    await prisma.kitchen.create({
+      data: {
+        firebaseUid: uid,
+        phone: '+919876500009',
+        kitchenName: 'Dual Kitchen',
+        kitchenPhotoUrls: [],
+      },
+    });
+
+    const auth = (r: request.Test) =>
+      r.set('Authorization', 'Bearer dual-test-token');
+
+    // Acting as the customer app → customer identity.
+    const asCustomer = await auth(
+      request(app.getHttpServer()).get('/api/customers/me'),
+    ).set('X-Client-App', 'customer').expect(200);
+    expect(asCustomer.body.name).toBe('Dual Person');
+    await auth(request(app.getHttpServer()).get('/api/kitchens/me'))
+      .set('X-Client-App', 'customer')
+      .expect(403);
+
+    // Acting as the kitchen app → kitchen identity, same token.
+    const asKitchen = await auth(
+      request(app.getHttpServer()).get('/api/kitchens/me'),
+    ).set('X-Client-App', 'kitchen').expect(200);
+    expect(asKitchen.body.kitchenName).toBe('Dual Kitchen');
+    await auth(request(app.getHttpServer()).get('/api/customers/me'))
+      .set('X-Client-App', 'kitchen')
+      .expect(403);
+
+    // No header → default order (customer first), preserving legacy behavior.
+    await auth(request(app.getHttpServer()).get('/api/customers/me')).expect(200);
+  });
+
+  // =====================================================================
+  // Step 13 — Payments (Razorpay mocked): create → verify → webhook
+  // =====================================================================
+  it('13. Razorpay order created, verified, and webhook is idempotent', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const placed = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+    const payOrderId = placed.body.id;
+
+    // Create the Razorpay order — response carries the public keyId for the app.
+    const rp = await request(app.getHttpServer())
+      .post(`/api/payments/${payOrderId}/razorpay-order`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(201);
+    expect(rp.body.razorpayOrderId).toBe(`order_mock_${payOrderId}`);
+    expect(rp.body.amountPaise).toBe(15500);
+    expect(rp.body.keyId).toBe('rzp_test_mock');
+
+    // A non-owning customer cannot create a Razorpay order for it.
+    await request(app.getHttpServer())
+      .post(`/api/payments/${payOrderId}/razorpay-order`)
+      .set('Authorization', 'Bearer customer2-test-token')
+      .expect(400);
+
+    // Capturing payment is what notifies the kitchen (not order placement).
+    const notifications = app.get(NotificationsService);
+    const spy = jest.spyOn(notifications, 'notifyOrderEvent');
+    spy.mockClear();
+
+    // Client-side verify → Payment captured.
+    const verify = await request(app.getHttpServer())
+      .post('/api/payments/verify')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({
+        razorpayOrderId: rp.body.razorpayOrderId,
+        razorpayPaymentId: 'pay_mock_001',
+        razorpaySignature: 'sig_mock',
+      })
+      .expect(201);
+    expect(verify.body.status).toBe('captured');
+
+    // The kitchen "new order" push fires exactly here, on capture.
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'received', orderId: payOrderId }),
+    );
+    spy.mockClear();
+
+    // Webhook arriving afterwards is idempotent (stays captured).
+    await request(app.getHttpServer())
+      .post('/api/payments/webhook')
+      .set('x-razorpay-signature', 'whatever-mock-accepts')
+      .send({
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: {
+              order_id: rp.body.razorpayOrderId,
+              id: 'pay_mock_001',
+              method: 'upi',
+            },
+          },
+        },
+      })
+      .expect(201);
+
+    // The webhook was already-captured → it must NOT re-notify the kitchen.
+    expect(spy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'received' }),
+    );
+    spy.mockRestore();
+
+    const payment = await prisma.payment.findFirst({
+      where: { razorpayOrderId: rp.body.razorpayOrderId },
+    });
+    expect(payment!.status).toBe('captured');
+    expect(payment!.method).toBe('upi');
+  });
+
+  // =====================================================================
+  // Step 14 — Unpaid orders auto-expire (plates restored); paid ones survive
+  // =====================================================================
+  it('14. expireUnpaidOrders cancels abandoned-payment orders and restores plates', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const place = async (qty: number) => {
+      const r = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', 'Bearer customer-test-token')
+        .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: qty }] })
+        .expect(201);
+      return r.body.id as string;
+    };
+    const backdate = (id: string) =>
+      prisma.order.update({
+        where: { id },
+        data: { placedAt: new Date(Date.now() - 20 * 60_000) },
+      });
+
+    // (a) abandoned payment: Razorpay order created but never captured, stale.
+    const abandoned = await place(2);
+    await prisma.payment.update({
+      where: { orderId: abandoned },
+      data: { razorpayOrderId: 'order_stale_abandoned' },
+    });
+    await backdate(abandoned);
+
+    // (b) paid + stale: must NOT be expired.
+    const paid = await place(1);
+    await prisma.payment.update({
+      where: { orderId: paid },
+      data: { razorpayOrderId: 'order_paid', status: 'captured' },
+    });
+    await backdate(paid);
+
+    // (c) no Razorpay order initiated (degraded flow) + stale: must NOT expire.
+    const degraded = await place(1);
+    await backdate(degraded);
+
+    const availBefore = await prisma.menuDailyAvailability.findUnique({
+      where: {
+        menuItemId_serviceDate: {
+          menuItemId,
+          serviceDate: new Date(todayDateStr()),
+        },
+      },
+    });
+    expect(availBefore!.platesRemaining).toBe(16); // 20 - 2 - 1 - 1
+
+    const orders = app.get(OrdersService);
+    const expired = await orders.expireUnpaidOrders(10);
+    expect(expired).toBe(1);
+
+    // (a) cancelled + its 2 plates restored.
+    const aOrder = await prisma.order.findUnique({ where: { id: abandoned } });
+    expect(aOrder!.status).toBe('cancelled');
+    expect(aOrder!.cancelReason).toContain('Payment not completed');
+
+    // (b) and (c) untouched.
+    expect((await prisma.order.findUnique({ where: { id: paid } }))!.status).toBe('received');
+    expect((await prisma.order.findUnique({ where: { id: degraded } }))!.status).toBe('received');
+
+    const availAfter = await prisma.menuDailyAvailability.findUnique({
+      where: {
+        menuItemId_serviceDate: {
+          menuItemId,
+          serviceDate: new Date(todayDateStr()),
+        },
+      },
+    });
+    expect(availAfter!.platesRemaining).toBe(18); // 16 + 2 restored
+  });
+
+  // =====================================================================
+  // Step 15 — Cancel pushes to the kitchen ONLY if it saw the order (paid)
+  // =====================================================================
+  it('15. Customer cancel notifies the kitchen only when the order was paid', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const place = async () => {
+      const r = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', 'Bearer customer-test-token')
+        .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+        .expect(201);
+      return r.body.id as string;
+    };
+    const cancel = (id: string) =>
+      request(app.getHttpServer())
+        .patch(`/api/orders/${id}/cancel`)
+        .set('Authorization', 'Bearer customer-test-token')
+        .send({ reason: 'changed my mind' })
+        .expect(200);
+
+    const notifications = app.get(NotificationsService);
+    const spy = jest.spyOn(notifications, 'notifyOrderEvent');
+
+    // (a) Unpaid → kitchen never saw it → no "cancelled" push.
+    const unpaid = await place();
+    spy.mockClear();
+    await cancel(unpaid);
+    expect(spy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'cancelled' }),
+    );
+
+    // (b) Paid (captured) → kitchen saw it → "cancelled" push fires.
+    const paid = await place();
+    await prisma.payment.update({
+      where: { orderId: paid },
+      data: { status: 'captured', razorpayOrderId: 'order_paid_cancel' },
+    });
+    spy.mockClear();
+    await cancel(paid);
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'cancelled', orderId: paid }),
+    );
+
+    spy.mockRestore();
   });
 });

@@ -5,6 +5,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health/health.controller';
 import { OrdersModule } from './orders/orders.module';
 import { KitchensModule } from './kitchens/kitchens.module';
+import { CustomersModule } from './customers/customers.module';
+import { FavoritesModule } from './favorites/favorites.module';
 import { MenuModule } from './menu/menu.module';
 import { PaymentsModule } from './payments/payments.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -20,12 +22,14 @@ import { GeocodeModule } from './geocode/geocode.module';
     StorageModule,
     AuthModule,
     KitchensModule,
+    CustomersModule,
     MenuModule,
     OrdersModule,
     PaymentsModule,
     NotificationsModule,
     ZonesModule,
     GeocodeModule,
+    FavoritesModule,
   ],
   controllers: [HealthController],
 })

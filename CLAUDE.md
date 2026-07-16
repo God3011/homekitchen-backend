@@ -84,7 +84,10 @@ All routes are protected by two global guards (registered as `APP_GUARD`):
 1. **FirebaseAuthGuard** (`src/auth/firebase-auth.guard.ts`):
    - Checks `Authorization: Bearer <firebaseIdToken>` header.
    - Verifies token via `FirebaseService.verifyIdToken()`.
-   - Resolves user from DB by Firebase UID: tries customer → kitchen → admin.
+   - Resolves user from DB by Firebase UID. One UID may exist in more than one
+     actor table (a person can be both buyer and seller); the app sends an
+     `X-Client-App: customer|kitchen|admin` header so the guard resolves to the
+     matching identity. Without the header it falls back to customer → kitchen → admin.
    - Attaches `{ role, userId, firebaseUid }` to `request.user`.
    - Routes marked `@Public()` skip verification entirely.
 

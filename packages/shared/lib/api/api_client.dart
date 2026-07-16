@@ -9,7 +9,10 @@ import 'package:flutter/foundation.dart';
 class ApiClient {
   final Dio _dio;
 
-  ApiClient({required String baseUrl})
+  /// [appRole] identifies which app is calling ('customer' | 'kitchen' |
+  /// 'admin'). Sent as the `X-Client-App` header so the backend resolves the
+  /// right identity when one Firebase UID is registered as more than one role.
+  ApiClient({required String baseUrl, String? appRole})
       : _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 15),
@@ -17,10 +20,11 @@ class ApiClient {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
+            if (appRole != null) 'X-Client-App': appRole,
           },
         )) {
     _dio.interceptors.add(_AuthInterceptor());
-    debugPrint('ApiClient initialized with baseUrl: $baseUrl');
+    debugPrint('ApiClient initialized with baseUrl: $baseUrl (app: $appRole)');
   }
 
   /// Manually set the Authorization Bearer header.

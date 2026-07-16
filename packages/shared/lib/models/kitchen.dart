@@ -15,6 +15,11 @@ class Kitchen {
   final String? signatureDish;
   final DateTime? verifiedAt;
   final DateTime createdAt;
+  // Server-computed rating summary (present on the customer detail endpoint).
+  final double? ratingAvg;
+  final int ratingCount;
+  // Straight-line distance from the caller, when GPS was supplied.
+  final int? distanceM;
 
   const Kitchen({
     required this.id,
@@ -32,6 +37,9 @@ class Kitchen {
     this.signatureDish,
     this.verifiedAt,
     required this.createdAt,
+    this.ratingAvg,
+    this.ratingCount = 0,
+    this.distanceM,
   });
 
   factory Kitchen.fromJson(Map<String, dynamic> json) {
@@ -55,6 +63,9 @@ class Kitchen {
           ? DateTime.parse(json['verifiedAt'] as String)
           : null,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      ratingAvg: (json['ratingAvg'] as num?)?.toDouble(),
+      ratingCount: json['ratingCount'] as int? ?? 0,
+      distanceM: json['distanceM'] as int?,
     );
   }
 

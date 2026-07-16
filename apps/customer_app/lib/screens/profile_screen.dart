@@ -1,0 +1,172 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
+
+import '../providers/api_provider.dart';
+import '../providers/auth_provider.dart';
+import '../services/push_service.dart';
+import '../widgets/address_picker.dart';
+
+class ProfileScreen extends ConsumerWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(customerProfileProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: profile.when(
+        data: (customer) {
+          if (customer == null) {
+            return const Center(child: Text('No profile found.'));
+          }
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const SizedBox(height: 8),
+              Center(
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.deepOrange.withValues(alpha: 0.15),
+                  child: Text(
+                    (customer.name?.isNotEmpty ?? false)
+                        ? customer.name![0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                        fontSize: 32, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: Text(customer.name ?? 'Add your name'),
+                trailing: const Icon(Icons.edit, size: 18),
+                onTap: () => _editName(context, ref, customer),
+              ),
+              ListTile(
+                leading: const Icon(Icons.phone_outlined),
+                title: Text(customer.phone),
+              ),
+              ListTile(
+                leading: const Icon(Icons.place_outlined),
+                title: Text(customer.homeZoneName ?? 'Home zone not set'),
+                subtitle: const Text('Home area'),
+                trailing: const Icon(Icons.edit, size: 18),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const _EditLocationScreen(),
+                )),
+              ),
+              const Divider(height: 32),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  // Unregister the FCM token while still authenticated.
+                  await unregisterDeviceToken(ref.read(apiClientProvider));
+                  await ref.read(authServiceProvider).signOut();
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text('Sign out'),
+              ),
+            ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => const Center(child: Text('Could not load profile.')),
+      ),
+    );
+  }
+
+  Future<void> _editName(
+      BuildContext context, WidgetRef ref, Customer customer) async {
+    final controller = TextEditingController(text: customer.name ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Your name'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'Name'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty) return;
+    try {
+      await ref
+          .read(apiClientProvider)
+          .patch('/customers/me', body: {'name': newName});
+      ref.invalidate(customerProfileProvider);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not update name.')));
+      }
+    }
+  }
+}
+
+/// Update the customer's home location (re-resolves their home zone server-side).
+class _EditLocationScreen extends ConsumerStatefulWidget {
+  const _EditLocationScreen();
+
+  @override
+  ConsumerState<_EditLocationScreen> createState() =>
+      _EditLocationScreenState();
+}
+
+class _EditLocationScreenState extends ConsumerState<_EditLocationScreen> {
+  AddressResult? _addr;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (_addr == null) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(apiClientProvider).patch('/customers/me', body: {
+        'lat': _addr!.lat,
+        'lng': _addr!.lng,
+      });
+      ref.invalidate(customerProfileProvider);
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not update location.')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Home location')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          AddressPicker(onChanged: (r) => setState(() => _addr = r)),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: (_addr == null || _saving) ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Save location'),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -40,8 +40,16 @@ export class FirebaseAuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired Firebase token.');
     }
 
-    // Look up the user across all three actor tables.
-    const user = await this.resolveUser(firebaseUid);
+    // The same phone number (Firebase UID) can be BOTH a customer and a kitchen.
+    // Each app declares which role it's acting as via the `X-Client-App` header
+    // so we resolve to the right identity; without it we fall back to a fixed
+    // order. Resolution never lets an app claim a role it isn't registered for —
+    // it only picks among the tables the UID actually exists in.
+    const clientApp = (
+      request.headers['x-client-app'] as string | undefined
+    )?.toLowerCase();
+
+    const user = await this.resolveUser(firebaseUid, clientApp);
     if (!user) {
       throw new UnauthorizedException(
         'No account linked to this Firebase UID. Complete signup first.',
@@ -52,32 +60,51 @@ export class FirebaseAuthGuard implements CanActivate {
     return true;
   }
 
-  private async resolveUser(firebaseUid: string): Promise<RequestUser | null> {
-    // Check customer first (most common caller), then kitchen, then admin.
-    const customer = await this.prisma.customer.findUnique({
-      where: { firebaseUid },
-      select: { id: true },
-    });
-    if (customer) {
-      return { role: 'customer', userId: customer.id, firebaseUid };
-    }
+  private async resolveUser(
+    firebaseUid: string,
+    preferred?: string,
+  ): Promise<RequestUser | null> {
+    const lookups: Record<
+      RequestUser['role'],
+      () => Promise<RequestUser | null>
+    > = {
+      customer: async () => {
+        const c = await this.prisma.customer.findUnique({
+          where: { firebaseUid },
+          select: { id: true },
+        });
+        return c ? { role: 'customer', userId: c.id, firebaseUid } : null;
+      },
+      kitchen: async () => {
+        const k = await this.prisma.kitchen.findUnique({
+          where: { firebaseUid },
+          select: { id: true },
+        });
+        return k ? { role: 'kitchen', userId: k.id, firebaseUid } : null;
+      },
+      admin: async () => {
+        const a = await this.prisma.admin.findUnique({
+          where: { firebaseUid },
+          select: { id: true },
+        });
+        return a ? { role: 'admin', userId: a.id, firebaseUid } : null;
+      },
+    };
 
-    const kitchen = await this.prisma.kitchen.findUnique({
-      where: { firebaseUid },
-      select: { id: true },
-    });
-    if (kitchen) {
-      return { role: 'kitchen', userId: kitchen.id, firebaseUid };
-    }
+    // Default order (customer first) preserved when no/invalid header is sent.
+    const defaultOrder: RequestUser['role'][] = ['customer', 'kitchen', 'admin'];
+    const order =
+      preferred && preferred in lookups
+        ? [
+            preferred as RequestUser['role'],
+            ...defaultOrder.filter((r) => r !== preferred),
+          ]
+        : defaultOrder;
 
-    const admin = await this.prisma.admin.findUnique({
-      where: { firebaseUid },
-      select: { id: true },
-    });
-    if (admin) {
-      return { role: 'admin', userId: admin.id, firebaseUid };
+    for (const role of order) {
+      const found = await lookups[role]();
+      if (found) return found;
     }
-
     return null;
   }
 }

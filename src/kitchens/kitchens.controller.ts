@@ -154,8 +154,21 @@ export class KitchensController {
 
   // --- Customer-facing (any authenticated role) ---
   @Get()
-  list(@Query('zoneId') zoneId?: string) {
-    return this.kitchens.list(zoneId);
+  list(
+    @CurrentUser() user: RequestUser,
+    @Query('zoneId') zoneId?: string,
+    @Query('openNow') openNow?: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ) {
+    const latNum = lat != null ? Number(lat) : NaN;
+    const lngNum = lng != null ? Number(lng) : NaN;
+    return this.kitchens.list(user, {
+      zoneId,
+      openNow: openNow === 'true' || openNow === '1',
+      lat: Number.isFinite(latNum) ? latNum : undefined,
+      lng: Number.isFinite(lngNum) ? lngNum : undefined,
+    });
   }
 
   @Get(':id')
