@@ -77,18 +77,31 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         contactPhone: phone,
       );
 
-      if (outcome == PaymentOutcome.failed) {
-        setState(() {
-          _placing = false;
-          _error =
-              'Payment failed. Your order is placed — you can pay from the order screen.';
-        });
-        // Still route to tracking so the order isn't lost.
-        _goToTracking(orderId);
+      if (outcome != PaymentOutcome.success) {
+        // Razorpay handles retry inside its own sheet; a non-success outcome
+        // only reaches us once the user has fully closed the gateway — i.e.
+        // they've given up. So cancel the unpaid order immediately (restores
+        // plates) and drop them back on the menu with their cart intact, so
+        // ordering again is easy. The server TTL sweep is the backstop if this
+        // cancel call doesn't land.
+        try {
+          await api.patch('/orders/$orderId/cancel', body: {
+            'reason': outcome == PaymentOutcome.failed
+                ? 'Payment failed'
+                : 'Payment not completed',
+          });
+        } catch (_) {/* TTL sweep will clean it up */}
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop(); // back to the kitchen menu (cart preserved)
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+              'Payment not completed — your order was cancelled. Your cart is saved; tap it to try again.'),
+        ));
         return;
       }
 
-      // success or cancelled → show the order (cancel-before-accept possible).
+      // Paid → show the live order.
       _goToTracking(orderId);
     } catch (e) {
       setState(() {

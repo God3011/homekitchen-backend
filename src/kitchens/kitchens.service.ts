@@ -5,7 +5,12 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DocType, KitchenStatus, OrderStatus } from '@prisma/client';
+import {
+  DocType,
+  KitchenStatus,
+  OrderStatus,
+  PaymentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FirebaseService } from '../auth/firebase.service';
 import { CreateKitchenDto } from './dto/create-kitchen.dto';
@@ -230,6 +235,10 @@ export class KitchensService {
     return this.prisma.order.findMany({
       where: {
         kitchenId,
+        // Sellers only ever see PAID orders. Unpaid/failed orders stay hidden
+        // (and get auto-cancelled by the TTL sweep) — mirrors the fact that the
+        // "new order" push also fires only on payment capture.
+        payment: { is: { status: PaymentStatus.captured } },
         ...(status ? { status: status as OrderStatus } : {}),
       },
       orderBy: { placedAt: 'desc' },

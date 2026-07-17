@@ -16,8 +16,9 @@ export class OrdersCleanupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrdersCleanupService.name);
   private timer?: ReturnType<typeof setInterval>;
 
-  /** How long an order may sit unpaid before it's auto-cancelled. */
-  private static readonly TTL_MINUTES = 10;
+  /** How long an order may sit unpaid before it's auto-cancelled. Gives the
+   *  customer a comfortable window to retry payment on the same order. */
+  private static readonly TTL_MINUTES = 15;
   /** How often to sweep for stale orders. */
   private static readonly SWEEP_MS = 60_000;
 

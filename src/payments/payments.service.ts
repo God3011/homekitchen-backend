@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RazorpayService } from './razorpay.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -113,6 +113,7 @@ export class PaymentsService {
 
     const payment = await this.prisma.payment.findFirst({
       where: { razorpayOrderId },
+      include: { order: { select: { status: true } } },
     });
     if (!payment) throw new NotFoundException('Payment not found.');
 
@@ -120,6 +121,18 @@ export class PaymentsService {
     // duplicate "new order" push, since that fires only on the transition).
     if (payment.status === PaymentStatus.captured) {
       return payment;
+    }
+
+    // The order may have been cancelled/rejected (e.g. the TTL sweep fired while
+    // the customer was retrying). Don't capture money against a dead order.
+    // (Production should trigger a Razorpay refund here.)
+    if (
+      payment.order.status === OrderStatus.cancelled ||
+      payment.order.status === OrderStatus.rejected
+    ) {
+      throw new BadRequestException(
+        'This order is no longer active; payment was not accepted.',
+      );
     }
 
     const updated = await this.prisma.payment.update({

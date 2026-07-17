@@ -106,15 +106,16 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
                           .textTheme
                           .titleLarge
                           ?.copyWith(fontWeight: FontWeight.bold)),
-                  StatusBadge(status: order.status),
+                  _HeaderBadge(order: order),
                 ],
               ),
               const SizedBox(height: 16),
               _StatusMessage(order: order),
               const SizedBox(height: 16),
+              // Pickup code only once the order is actually paid + confirmed.
               if (order.status == OrderStatus.ready ||
                   order.status == OrderStatus.preparing ||
-                  order.status == OrderStatus.received)
+                  (order.status == OrderStatus.received && orderIsPaid(order)))
                 _HandoverCard(order: order),
               const SizedBox(height: 16),
               _ItemsCard(order: order),
@@ -171,6 +172,54 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
   }
 }
 
+/// An order is confirmed to the kitchen only once its payment is captured.
+bool orderIsPaid(Order order) => order.payment?.status == 'captured';
+
+/// Top-right badge: shows "Awaiting payment" (with a spinner) while a freshly
+/// placed order hasn't been paid yet, "Payment failed" if it failed, otherwise
+/// the normal order-status badge.
+class _HeaderBadge extends StatelessWidget {
+  const _HeaderBadge({required this.order});
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = order.payment?.status == 'failed';
+    final awaiting =
+        order.status == OrderStatus.received && !orderIsPaid(order);
+
+    if (!awaiting) return StatusBadge(status: order.status);
+
+    final color = failed ? Colors.red : Colors.orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!failed) ...[
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(failed ? 'Payment failed' : 'Awaiting payment',
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatusMessage extends StatelessWidget {
   const _StatusMessage({required this.order});
   final Order order;
@@ -180,7 +229,11 @@ class _StatusMessage extends StatelessWidget {
     String msg;
     switch (order.status) {
       case OrderStatus.received:
-        msg = 'Waiting for the kitchen to accept your order.';
+        if (!orderIsPaid(order)) {
+          msg = 'Awaiting payment confirmation…';
+        } else {
+          msg = 'Waiting for the kitchen to accept your order.';
+        }
         break;
       case OrderStatus.preparing:
         msg = order.etaMinutes != null
@@ -199,7 +252,9 @@ class _StatusMessage extends StatelessWidget {
             : 'The kitchen could not take your order. You will not be charged.';
         break;
       case OrderStatus.cancelled:
-        msg = 'This order was cancelled.';
+        msg = order.cancelReason != null && order.cancelReason!.isNotEmpty
+            ? 'This order was cancelled: ${order.cancelReason}. You can reorder to try again.'
+            : 'This order was cancelled.';
         break;
       default:
         msg = '';

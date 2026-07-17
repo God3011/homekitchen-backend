@@ -705,6 +705,14 @@ describe('E2E: Full order lifecycle', () => {
     expect(res.body.items[0].itemName).toBe('Hyderabadi Biryani');
     expect(res.body.items[0].unitPricePaise).toBe(15000);
     expect(res.body.items[0].quantity).toBe(1);
+
+    // Mark this order paid — the kitchen's order list only shows captured
+    // orders, so the lifecycle steps below (accept/ready/handover + listing)
+    // operate on a paid order, as they would in production.
+    await prisma.payment.update({
+      where: { orderId },
+      data: { status: 'captured', razorpayOrderId: `order_${orderId}` },
+    });
   });
 
   // =====================================================================
@@ -780,6 +788,23 @@ describe('E2E: Full order lifecycle', () => {
     expect(order.items[0].itemName).toBe('Hyderabadi Biryani');
     expect(order.items[0].preferences).toBeDefined();
     expect(order.payment).toBeTruthy();
+
+    // An UNPAID order must NOT appear in the seller's list (payment not captured).
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+    const unpaid = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+    const list = await request(app.getHttpServer())
+      .get('/api/kitchens/me/orders')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    expect(list.body.find((o: any) => o.id === unpaid.body.id)).toBeUndefined();
   });
 
   it('6f. Kitchen can filter orders by status', async () => {
@@ -1338,5 +1363,49 @@ describe('E2E: Full order lifecycle', () => {
     );
 
     spy.mockRestore();
+  });
+
+  // =====================================================================
+  // Step 16 — Payment is NOT captured for an order that's already cancelled
+  // =====================================================================
+  it('16. verify rejects capture on a cancelled order (no money for a dead order)', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const placed = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+    const id = placed.body.id;
+
+    const rp = await request(app.getHttpServer())
+      .post(`/api/payments/${id}/razorpay-order`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(201);
+
+    // Order gets cancelled (e.g. TTL sweep) before the retry payment lands.
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${id}/cancel`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ reason: 'gave up' })
+      .expect(200);
+
+    // A late verify must be rejected — no capture against the dead order.
+    await request(app.getHttpServer())
+      .post('/api/payments/verify')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({
+        razorpayOrderId: rp.body.razorpayOrderId,
+        razorpayPaymentId: 'pay_late_001',
+        razorpaySignature: 'sig_mock',
+      })
+      .expect(400);
+
+    const payment = await prisma.payment.findFirst({ where: { orderId: id } });
+    expect(payment!.status).not.toBe('captured');
   });
 });
