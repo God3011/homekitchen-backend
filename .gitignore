@@ -18,3 +18,10 @@ local.properties
 # Firebase app config (share out-of-band, not in VCS)
 **/google-services.json
 **/GoogleService-Info.plist
+
+# Built APKs / large binaries — rebuild, don't commit
+*.apk
+shareable-apks/
+
+# One-off DB backups written before destructive ops
+deleted-backup-*.json
