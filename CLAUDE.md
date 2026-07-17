@@ -1,8 +1,9 @@
 # Homely Food Marketplace — Backend (project brief for AI coding agents)
 
 You are working on the **shared backend** for a two-sided home-food marketplace
-in Hyderabad (Gachibowli zone). Home cooks sell homely lunch/dinner; customers
-order pickup. One backend serves the Seller app, the Customer app, and Admin.
+in Hyderabad (launching around Gachibowli). Home cooks sell homely lunch/dinner;
+customers order pickup. Discovery is **radius-based**, not zone-gated (see Hard
+rules). One backend serves the Seller app, the Customer app, and Admin.
 
 **Read this file fully before writing code. `src/orders/` is the reference
 pattern — match its structure and conventions in every new module.**
@@ -24,6 +25,24 @@ pattern — match its structure and conventions in every new module.**
 - **Money is stored in paise (integers).** Never floats for currency. ₹5 = 500.
 - **Pickup-first for v1.** The `delivery` fulfillment type + delivery-fee fields
   exist in the schema for forward-compat, but do NOT build delivery flows for v1.
+- **Discovery is radius-based, NOT zone-gated.** The customer app shows kitchens
+  within a configurable radius (`PlatformConfig.discoveryRadiusM`, default 3000 m)
+  of the user's location, computed server-side by haversine. Zones NO LONGER gate
+  access; `Zone` remains a **passive analytics label** stamped onto
+  customers/kitchens/orders by nearest-zone match — nullable when the point falls
+  outside every zone (ordering still works with a null zone).
+- **The kitchen-list endpoint returns three distinct states** so the app can
+  render them differently:
+  - **(a) serviceable** — verified + cooking today + within operating hours + has
+    plates. → normal list.
+  - **(b) in radius but not serviceable** — kitchens exist within radius but none
+    currently serviceable. Return them with `serviceable: false` and a `reason`
+    (`not_cooking_today` | `outside_hours` | `sold_out`). → dimmed list with a
+    "No serviceable kitchens right now" banner.
+  - **(c) no kitchens within radius at all.** → "Not serving your area yet" screen
+    with interest capture (log coordinates + optional phone number).
+- **Dormant (non-serviceable) kitchen profiles are viewable**; add-to-cart is
+  disabled with the reason shown.
 - **Enforce the product rules in code, not just docs:** ₹200 per-item price cap
   (enforced in `MenuService.createItem()` and `MenuService.updateItem()`), flat ₹5
   platform fee, ₹50/day seller fee. These live in the `PlatformConfig` row. There
@@ -110,8 +129,8 @@ Single source of truth: `prisma/schema.prisma` (20+ models, one `public` schema)
 
 | Model | Purpose |
 |-------|---------|
-| `PlatformConfig` | Single-row config: `platformFeePaise` (500), `sellerDailyFeePaise` (5000), `itemPriceCapPaise` (20000), `lowStockThreshold` (3) |
-| `Zone` | Geographic zones (Gachibowli etc.), customers + kitchens belong to zones |
+| `PlatformConfig` | Single-row config: `platformFeePaise` (500), `sellerDailyFeePaise` (5000), `itemPriceCapPaise` (20000), `lowStockThreshold` (3), `discoveryRadiusM` (3000) |
+| `Zone` | **Passive analytics label** (Gachibowli etc.) stamped on customers/kitchens/orders by nearest-zone match. Does NOT gate discovery (radius-based); nullable when outside all zones |
 | `Customer` | Customer App users, linked by `firebaseUid` |
 | `Kitchen` | Seller App users, status lifecycle: `pending_review → verified → suspended` |
 | `KitchenDocument` | FSSAI / ID proof uploads for verification |
@@ -209,7 +228,7 @@ Global prefix: `/api`. All endpoints require Firebase Bearer token unless marked
 | GET | `/api/kitchens/me/orders` | Kitchen | List own incoming orders (optional `?status=` filter) |
 | PATCH | `/api/kitchens/:id/verify` | Admin | Verify a kitchen |
 | PATCH | `/api/kitchens/:id/suspend` | Admin | Suspend a kitchen |
-| GET | `/api/kitchens` | Authenticated | Customer-facing: list kitchens (optional `?zoneId=`) |
+| GET | `/api/kitchens` | Authenticated | Customer-facing: radius-based discovery near `?lat=&lng=` (`?radiusM=` overrides default). Returns the three serviceability states — see Hard rules |
 | GET | `/api/kitchens/:id` | Authenticated | Customer-facing: kitchen detail |
 
 ### Menu
