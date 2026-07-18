@@ -57,7 +57,8 @@ total cap**, menu **snapshot at order time**, race-safe **plate** decrement,
 **4.1 Customers module** (`src/customers/`) — keystone
 - `POST /api/customers/signup` (`@Public`, token verified in service like
   `kitchens/signup`): create Customer from Firebase `uid`+`phone_number`,
-  `{ name, lat?, lng? }`; resolve `homeZoneId` via `ZonesService.resolveOrCreate`.
+  `{ name, lat?, lng? }`; stamp `homeZoneId` via `ZonesService.containingZoneId`
+  (nearest containing zone, else null — zones are passive labels, never created).
 - `GET /api/customers/me`, `PATCH /api/customers/me` (`@Roles('customer')`).
 
 **4.2 Authorization hardening** (touches order/payment controllers — regression-
@@ -77,10 +78,15 @@ rated. Kitchen average derived from the `ratings` relation.
 **4.4 Favorites** — `POST /api/favorites/:kitchenId`, `DELETE .../:kitchenId`,
 `GET /api/favorites` (`@Roles('customer')`).
 
-**4.5 Discovery refinements** — extend `kitchens.list`: `ratingAvg`/`ratingCount`,
-optional **open-now** filter (reuse `OrdersService` hours logic), **distance**
-from customer lat/lng (haversine in `ZonesService`); default `zoneId` to the
-customer's `homeZoneId`.
+**4.5 Discovery — radius-based, three-state (IMPLEMENTED)** — `GET /api/kitchens`
+requires the caller's `lat`/`lng` (optional `radiusM`), computes haversine distance
+server-side to every verified kitchen, keeps those within
+`PlatformConfig.discoveryRadiusM` (default 3000 m), and returns `{ state, kitchens }`:
+- `state` = `serviceable` | `dormant_only` | `none_in_radius`.
+- each kitchen: `ratingAvg`/`ratingCount`, `distanceM`, `serviceable`, plus
+  `dormantReason` (`not_cooking_today` | `outside_hours` | `sold_out`) when dormant.
+- Zones no longer gate discovery; `none_in_radius` drives interest capture
+  (`POST /api/service-interest`, public + rate-limited).
 
 **4.6 Payments** — code exists; **verify** end-to-end with Razorpay test-mode
 keys (create→pay→verify→webhook, `Payment.captured`, idempotency).
@@ -90,17 +96,28 @@ keys (create→pay→verify→webhook, `Payment.captured`, idempotency).
 ## 5. Shared Package Additions
 - New models: `Customer`, `Rating`, `Favorite`, client-side `Cart` (single-
   kitchen; food total + ₹5 fee).
-- Extend: `Kitchen` (+`ratingAvg`, `ratingCount`, `distanceM`), `Payment`
-  (Razorpay ids/status).
+- Extend: `Kitchen`/`DiscoveryKitchen` (+`ratingAvg`, `ratingCount`, `distanceM`,
+  **`serviceable`, `dormantReason`**), `Payment` (Razorpay ids/status). Discovery
+  provider parses the `{ state, kitchens }` envelope and passes device `lat/lng`.
 
 ## 6. Customer App — Screens & Flows (phased)
 - **P1 Onboarding:** phone→OTP (reuse `AuthService`) → auth gate → profile setup
-  (name + home location via the `AddressPicker`) → `POST /customers/signup`.
-  Bottom nav: Home · Orders · Favorites · Profile.
-- **P2 Discovery:** kitchens in zone (cards: photo, name, rating, signature dish,
-  open/closed, distance); search + filters; empty state.
+  (name + home **location** via the `AddressPicker`) → `POST /customers/signup`.
+  Home location is the **discovery centre** (radius search); the zone it stamps
+  is a passive label only. Bottom nav: Home · Orders · Favorites · Profile.
+- **P2 Discovery (radius, three states):** pass device `lat/lng` to
+  `GET /api/kitchens` and render on `state`:
+  - `serviceable` → normal list (cards: photo, name, rating, signature dish,
+    distance, open/closed).
+  - `dormant_only` → **dimmed** list + "No serviceable kitchens right now" banner;
+    each card shows a `dormantReason` chip.
+  - `none_in_radius` → **"Not serving your area yet"** screen with interest capture
+    → `POST /service-interest` (coords + optional phone).
+  Search + filters over the returned list.
 - **P3 Kitchen detail & menu:** header (photos, story, rating, hours, ♥),
   category-grouped menu, dish rows (price, plates-left, prefs), add-to-cart.
+  **Dormant** (non-serviceable) profiles remain viewable; add-to-cart is
+  **disabled with the `dormantReason` shown as a chip**.
 - **P4 Cart & checkout:** single-kitchen cart, qty/prefs, totals (food + ₹5),
   place order → `POST /orders`.
 - **P5 Payment:** `POST /payments/:orderId/razorpay-order` → `razorpay_flutter`
