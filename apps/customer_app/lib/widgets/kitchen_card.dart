@@ -14,11 +14,14 @@ class KitchenCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final photo = kitchen.cookPhotoUrl;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
+    return Opacity(
+      // Dim dormant kitchens — still tappable/viewable, just not orderable now.
+      opacity: kitchen.serviceable ? 1 : 0.6,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,7 +65,7 @@ class KitchenCard extends StatelessWidget {
                             average: kitchen.ratingAvg,
                             count: kitchen.ratingCount),
                         const Spacer(),
-                        _OpenBadge(isOpen: kitchen.isOpenNow),
+                        _StatusChip(kitchen: kitchen),
                       ],
                     ),
                     if (kitchen.distanceLabel != null)
@@ -85,25 +88,28 @@ class KitchenCard extends StatelessWidget {
             ],
           ),
         ),
+        ),
       ),
     );
   }
 }
 
-class _OpenBadge extends StatelessWidget {
-  const _OpenBadge({required this.isOpen});
-  final bool isOpen;
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.kitchen});
+  final DiscoveryKitchen kitchen;
 
   @override
   Widget build(BuildContext context) {
-    final color = isOpen ? Colors.green : Colors.grey;
+    final serviceable = kitchen.serviceable;
+    final label = serviceable ? 'Available' : (kitchen.dormantLabel ?? 'Closed');
+    final color = serviceable ? Colors.green : Colors.orange.shade800;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(isOpen ? 'Open' : 'Closed',
+      child: Text(label,
           style: TextStyle(
               fontSize: 11, color: color, fontWeight: FontWeight.w600)),
     );

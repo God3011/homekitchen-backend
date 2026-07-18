@@ -15,11 +15,14 @@ class DishRow extends ConsumerWidget {
     required this.dish,
     required this.kitchenId,
     required this.kitchenName,
+    this.orderingEnabled = true,
   });
 
   final MenuDish dish;
   final String kitchenId;
   final String kitchenName;
+  // False when the kitchen is dormant — the dish shows but can't be added.
+  final bool orderingEnabled;
 
   Future<void> _add(BuildContext context, WidgetRef ref) async {
     final cart = ref.read(cartProvider.notifier);
@@ -166,7 +169,9 @@ class DishRow extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 12),
-          if (soldOut)
+          if (!orderingEnabled)
+            const SizedBox.shrink()
+          else if (soldOut)
             const SizedBox.shrink()
           else if (qty == 0)
             OutlinedButton(

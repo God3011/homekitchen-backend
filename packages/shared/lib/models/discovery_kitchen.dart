@@ -1,8 +1,8 @@
 /// A kitchen as it appears in the customer discovery list
 /// (`GET /api/kitchens`). This is a trimmed, enriched projection — it carries a
-/// server-computed rating summary, open-now flag, and optional distance, but
-/// NOT the full Kitchen fields (phone, status, hours, …). Use [Kitchen] for the
-/// detail screen.
+/// server-computed rating summary, distance, and a `serviceable` flag (with a
+/// `dormantReason` when not), but NOT the full Kitchen fields (phone, status,
+/// hours, …). Use [Kitchen] for the detail screen.
 class DiscoveryKitchen {
   final String id;
   final String kitchenName;
@@ -15,8 +15,11 @@ class DiscoveryKitchen {
   final double? lng;
   final double? ratingAvg;
   final int ratingCount;
-  final bool isOpenNow;
   final int? distanceM;
+  // Serviceable = verified + cooking today + within hours + has plates.
+  final bool serviceable;
+  // 'not_cooking_today' | 'outside_hours' | 'sold_out' — set only when dormant.
+  final String? dormantReason;
 
   const DiscoveryKitchen({
     required this.id,
@@ -30,8 +33,9 @@ class DiscoveryKitchen {
     this.lng,
     this.ratingAvg,
     this.ratingCount = 0,
-    this.isOpenNow = false,
     this.distanceM,
+    this.serviceable = false,
+    this.dormantReason,
   });
 
   factory DiscoveryKitchen.fromJson(Map<String, dynamic> json) {
@@ -47,8 +51,9 @@ class DiscoveryKitchen {
       lng: (json['lng'] as num?)?.toDouble(),
       ratingAvg: (json['ratingAvg'] as num?)?.toDouble(),
       ratingCount: json['ratingCount'] as int? ?? 0,
-      isOpenNow: json['isOpenNow'] as bool? ?? false,
       distanceM: json['distanceM'] as int?,
+      serviceable: json['serviceable'] as bool? ?? false,
+      dormantReason: json['dormantReason'] as String?,
     );
   }
 
@@ -58,5 +63,19 @@ class DiscoveryKitchen {
     if (d == null) return null;
     if (d < 1000) return '$d m';
     return '${(d / 1000).toStringAsFixed(1)} km';
+  }
+
+  /// Short customer-facing label for why a kitchen isn't orderable right now.
+  String? get dormantLabel {
+    switch (dormantReason) {
+      case 'not_cooking_today':
+        return 'Not cooking today';
+      case 'outside_hours':
+        return 'Closed now';
+      case 'sold_out':
+        return 'Sold out';
+      default:
+        return null;
+    }
   }
 }

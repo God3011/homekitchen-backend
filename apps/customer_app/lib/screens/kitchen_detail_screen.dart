@@ -10,9 +10,31 @@ import '../widgets/rating_stars.dart';
 import 'cart_screen.dart';
 
 class KitchenDetailScreen extends ConsumerWidget {
-  const KitchenDetailScreen({super.key, required this.kitchenId});
+  const KitchenDetailScreen({
+    super.key,
+    required this.kitchenId,
+    this.serviceable = true,
+    this.dormantReason,
+  });
 
   final String kitchenId;
+  // From the discovery card. When not serviceable the profile is viewable but
+  // ordering is disabled (the backend enforces this too).
+  final bool serviceable;
+  final String? dormantReason;
+
+  String get _dormantLabel {
+    switch (dormantReason) {
+      case 'not_cooking_today':
+        return 'Not cooking today';
+      case 'outside_hours':
+        return 'Closed right now';
+      case 'sold_out':
+        return 'Sold out for today';
+      default:
+        return 'Not available right now';
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,6 +73,27 @@ class KitchenDetailScreen extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             children: [
               _Header(kitchen: kitchen),
+              if (!serviceable)
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline,
+                          size: 18, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('$_dormantLabel — you can\'t order now.',
+                            style: const TextStyle(color: Colors.orange)),
+                      ),
+                    ],
+                  ),
+                ),
               const Divider(height: 32),
               menu.when(
                 data: (m) => m.isEmpty
@@ -74,6 +117,7 @@ class KitchenDetailScreen extends ConsumerWidget {
                                 dish: dish,
                                 kitchenId: kitchenId,
                                 kitchenName: kitchen.kitchenName,
+                                orderingEnabled: serviceable,
                               ),
                             const SizedBox(height: 16),
                           ],
@@ -94,7 +138,7 @@ class KitchenDetailScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const Center(child: Text('Could not load kitchen.')),
       ),
-      bottomNavigationBar: const _CartBar(),
+      bottomNavigationBar: serviceable ? const _CartBar() : null,
     );
   }
 }
