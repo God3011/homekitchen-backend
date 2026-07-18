@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggingMiddleware } from './common/logging.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health/health.controller';
@@ -14,10 +15,15 @@ import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { ZonesModule } from './zones/zones.module';
 import { GeocodeModule } from './geocode/geocode.module';
+import { ServiceInterestModule } from './service-interest/service-interest.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Throttler is registered globally so ThrottlerGuard can be resolved, but it
+    // is applied per-route (only the service-interest controller opts in via
+    // @UseGuards), so the rest of the API is NOT rate-limited.
+    ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 5 }] }),
     PrismaModule,
     StorageModule,
     AuthModule,
@@ -30,6 +36,7 @@ import { GeocodeModule } from './geocode/geocode.module';
     ZonesModule,
     GeocodeModule,
     FavoritesModule,
+    ServiceInterestModule,
   ],
   controllers: [HealthController],
 })

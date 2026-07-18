@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -152,22 +153,30 @@ export class KitchensController {
     return this.kitchens.suspend(id);
   }
 
-  // --- Customer-facing (any authenticated role) ---
+  // --- Customer-facing radius discovery (any authenticated role) ---
+  // GET /api/kitchens?lat=&lng=&radiusM=  (lat/lng required)
   @Get()
   list(
     @CurrentUser() user: RequestUser,
-    @Query('zoneId') zoneId?: string,
-    @Query('openNow') openNow?: string,
     @Query('lat') lat?: string,
     @Query('lng') lng?: string,
+    @Query('radiusM') radiusM?: string,
   ) {
-    const latNum = lat != null ? Number(lat) : NaN;
-    const lngNum = lng != null ? Number(lng) : NaN;
+    const latNum = Number(lat);
+    const lngNum = Number(lng);
+    if (
+      lat == null ||
+      lng == null ||
+      !Number.isFinite(latNum) ||
+      !Number.isFinite(lngNum)
+    ) {
+      throw new BadRequestException('lat and lng query params are required.');
+    }
+    const r = radiusM != null ? Number(radiusM) : undefined;
     return this.kitchens.list(user, {
-      zoneId,
-      openNow: openNow === 'true' || openNow === '1',
-      lat: Number.isFinite(latNum) ? latNum : undefined,
-      lng: Number.isFinite(lngNum) ? lngNum : undefined,
+      lat: latNum,
+      lng: lngNum,
+      radiusM: r != null && Number.isFinite(r) ? r : undefined,
     });
   }
 

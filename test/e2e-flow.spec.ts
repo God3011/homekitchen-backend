@@ -55,6 +55,8 @@ const DECODED_TOKENS: Record<string, { uid: string; phone_number?: string }> = {
   'customer2-test-token': { uid: 'fb-customer-002', phone_number: '+919876500002' },
   // One UID registered as BOTH a customer and a kitchen (dual-role test).
   'dual-test-token': { uid: 'fb-dual-001', phone_number: '+919876500009' },
+  // Customer signed up OUTSIDE all zones (homeZoneId null) — order-still-works test.
+  'customer3-test-token': { uid: 'fb-customer-003', phone_number: '+919876500003' },
   'admin-test-token': { uid: 'fb-admin-001' },
 };
 
@@ -168,6 +170,12 @@ describe('E2E: Full order lifecycle', () => {
   let prisma: PrismaService;
 
   const ZONE_ID = '54653fb6-c8dc-47b9-a736-20261b5c889e';
+  // Seeded zone/customer sit at (17.4401, 78.3489). Kitchen ~2 km north — well
+  // inside the 3000 m default discovery radius.
+  const CUST_LAT = 17.4401;
+  const CUST_LNG = 78.3489;
+  const KITCHEN_LAT = 17.4581;
+  const KITCHEN_LNG = 78.3489;
   let kitchenId: string;
   let customerId: string;
   let customer2Id: string;
@@ -270,7 +278,8 @@ describe('E2E: Full order lifecycle', () => {
       .post('/api/kitchens/signup')
       .set('Authorization', 'Bearer kitchen-test-token')
       .field('kitchenName', 'Amma Kitchen')
-      .field('zoneId', ZONE_ID)
+      .field('lat', String(KITCHEN_LAT))
+      .field('lng', String(KITCHEN_LNG))
       .attach('kitchenPhotos', Buffer.from('fake-image'), 'kitchen.jpg')
       .attach('selfPhoto', Buffer.from('fake-image'), 'self.jpg');
 
@@ -373,18 +382,31 @@ describe('E2E: Full order lifecycle', () => {
   });
 
   // =====================================================================
-  // Step 4 — Customer lists kitchens in zone
+  // Step 4 — Radius discovery: Amma Kitchen is serviceable & in range
   // =====================================================================
-  it('4. Customer lists verified kitchens → Amma Kitchen appears', async () => {
+  it('4. Radius discovery → state serviceable, Amma within radius', async () => {
     const res = await request(app.getHttpServer())
-      .get(`/api/kitchens?zoneId=${ZONE_ID}`)
+      .get(`/api/kitchens?lat=${CUST_LAT}&lng=${CUST_LNG}`)
       .set('Authorization', 'Bearer customer-test-token')
       .expect(200);
 
-    expect(Array.isArray(res.body)).toBe(true);
-    const found = res.body.find((k: any) => k.id === kitchenId);
+    expect(res.body.state).toBe('serviceable');
+    expect(Array.isArray(res.body.kitchens)).toBe(true);
+    const found = res.body.kitchens.find((k: any) => k.id === kitchenId);
     expect(found).toBeTruthy();
     expect(found.kitchenName).toBe('Amma Kitchen');
+    expect(found.serviceable).toBe(true);
+    expect(found.dormantReason).toBeUndefined();
+    // ~2 km away, comfortably inside the 3000 m radius.
+    expect(found.distanceM).toBeGreaterThan(1000);
+    expect(found.distanceM).toBeLessThan(3000);
+  });
+
+  it('4a-i. lat/lng are required for discovery', async () => {
+    await request(app.getHttpServer())
+      .get('/api/kitchens')
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(400);
   });
 
   // =====================================================================
@@ -832,7 +854,8 @@ describe('E2E: Full order lifecycle', () => {
       .post('/api/kitchens/signup')
       .set('Authorization', 'Bearer kitchen2-test-token')
       .field('kitchenName', 'Other Kitchen')
-      .field('zoneId', ZONE_ID)
+      .field('lat', String(KITCHEN_LAT))
+      .field('lng', String(KITCHEN_LNG))
       .attach('kitchenPhotos', Buffer.from('fake-image'), 'kitchen.jpg')
       .attach('selfPhoto', Buffer.from('fake-image'), 'self.jpg')
       .expect(201);
@@ -1407,5 +1430,93 @@ describe('E2E: Full order lifecycle', () => {
 
     const payment = await prisma.payment.findFirst({ where: { orderId: id } });
     expect(payment!.status).not.toBe('captured');
+  });
+
+  // =====================================================================
+  // Step 17 — Discovery states: dormant_only + order guard + none_in_radius
+  // =====================================================================
+  it('17a. Not cooking today → dormant_only + dormantReason not_cooking_today', async () => {
+    // Ensure plates + hours are fine so the ONLY thing making it dormant is cooking.
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/api/kitchens/me/daily-status')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), isCooking: false })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/kitchens?lat=${CUST_LAT}&lng=${CUST_LNG}`)
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+    expect(res.body.state).toBe('dormant_only');
+    const found = res.body.kitchens.find((k: any) => k.id === kitchenId);
+    expect(found.serviceable).toBe(false);
+    expect(found.dormantReason).toBe('not_cooking_today');
+  });
+
+  it('17b. Ordering from a dormant (not-cooking) kitchen is rejected with dormantReason', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(400);
+    expect(res.body.dormantReason).toBe('not_cooking_today');
+
+    // Restore cooking so later assertions / manual use see a serviceable kitchen.
+    await request(app.getHttpServer())
+      .post('/api/kitchens/me/daily-status')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), isCooking: true })
+      .expect(201);
+  });
+
+  it('17c. No kitchens within radius → none_in_radius + service-interest captured', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/kitchens?lat=18.5&lng=79.5') // ~150 km away
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(200);
+    expect(res.body.state).toBe('none_in_radius');
+    expect(res.body.kitchens).toHaveLength(0);
+
+    const before = await prisma.serviceInterest.count();
+    await request(app.getHttpServer())
+      .post('/api/service-interest')
+      .send({ lat: 18.5, lng: 79.5, phone: '+919000000018' })
+      .expect(201)
+      .expect((r) => expect(r.body.ok).toBe(true));
+    expect(await prisma.serviceInterest.count()).toBe(before + 1);
+  });
+
+  // =====================================================================
+  // Step 18 — A customer OUTSIDE all zones can still order (zoneId null)
+  // =====================================================================
+  it('18. Customer outside all zones signs up (null zone) and orders fine', async () => {
+    // Far from the seeded Gachibowli zone → homeZoneId null.
+    const signup = await request(app.getHttpServer())
+      .post('/api/customers/signup')
+      .set('Authorization', 'Bearer customer3-test-token')
+      .send({ name: 'Far Customer', lat: 18.9, lng: 79.9 })
+      .expect(201);
+    expect(signup.body.homeZoneId).toBeNull();
+
+    // Kitchen must be serviceable: cooking (restored in 17b) + hours + plates.
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const order = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer3-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+
+    const row = await prisma.order.findUnique({ where: { id: order.body.id } });
+    expect(row!.zoneId).toBeNull();
   });
 });

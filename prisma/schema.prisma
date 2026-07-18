@@ -72,6 +72,7 @@ model PlatformConfig {
   sellerDailyFeePaise  Int      @default(5000)  @map("seller_daily_fee_paise")
   itemPriceCapPaise    Int      @default(20000) @map("item_price_cap_paise")
   lowStockThreshold    Int      @default(3)     @map("low_stock_threshold") /// Push alert when plates_remaining <= this
+  discoveryRadiusM     Int      @default(3000)  @map("discovery_radius_m") /// Customer discovery radius (metres); haversine, not zone-gated
   currency             String   @default("INR") @db.Char(3)
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -436,4 +437,19 @@ model Admin {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@map("admins")
+}
+
+// ---------------------------------------------------------------------------
+// Service interest — captured when a customer's location has no kitchens in
+// range ("not serving your area yet"). Used for expansion planning.
+// ---------------------------------------------------------------------------
+model ServiceInterest {
+  id        String   @id @default(uuid()) @db.Uuid
+  lat       Float
+  lng       Float
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt])
+  @@map("service_interest")
 }

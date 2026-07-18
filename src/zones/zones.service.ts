@@ -13,10 +13,9 @@ export class ZonesService {
   }
 
   /**
-   * Preview of the zone a point will be assigned to (read-only): the zone that
-   * contains it, or — if none does — the *proposed* new zone that would be
-   * created on save (same name resolveOrCreate would use). Never persists.
-   * Callers just show `name`; `id` is null for a not-yet-created zone.
+   * Read-only preview of the zone label a point falls in: the active zone that
+   * contains it, or a placeholder (`id: null`) when none does. Zones are passive
+   * labels — nothing is ever created. Callers just show `name`.
    */
   async resolveNearest(lat: number, lng: number) {
     const zones = await this.prisma.zone.findMany({ where: { isActive: true } });
@@ -47,31 +46,23 @@ export class ZonesService {
   }
 
   /**
-   * The active zone that *contains* the point (within its radius), or — if the
-   * point falls outside every zone — a brand-new zone centred there. This lets
-   * the service area grow organically as kitchens sign up in fresh locations.
+   * The id of the active zone that *contains* the point (nearest, within its
+   * radius), or null when the point falls outside every zone. Zones are passive
+   * analytics labels — never created here. Discovery is radius-based, not
+   * zone-gated, so a null label never blocks any flow.
    */
-  async resolveOrCreate(lat: number, lng: number) {
+  async containingZoneId(lat: number, lng: number): Promise<string | null> {
     const zones = await this.prisma.zone.findMany({ where: { isActive: true } });
-    let containing: (typeof zones)[number] | null = null;
+    let containingId: string | null = null;
     let best = Infinity;
     for (const z of zones) {
       const d = this.haversineM(lat, lng, z.centerLat, z.centerLng);
       if (d <= z.radiusM && d < best) {
         best = d;
-        containing = z;
+        containingId = z.id;
       }
     }
-    if (containing) return containing;
-
-    // New area — found a zone here (radiusM defaults to 5000m in the schema).
-    return this.prisma.zone.create({
-      data: {
-        name: this.newZoneName(lat, lng),
-        centerLat: lat,
-        centerLng: lng,
-      },
-    });
+    return containingId;
   }
 
   /** Public great-circle distance between two lat/lng points, in metres. */

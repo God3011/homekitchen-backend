@@ -39,16 +39,16 @@ export class KitchensService {
     private readonly zones: ZonesService,
   ) {}
 
-  /** Zone from GPS when provided (containing zone or a new one), else the
-   *  explicit zoneId. Server-authoritative so the client can't mis-assign. */
+  /** Zone LABEL from GPS when provided (nearest containing active zone, else
+   *  null — never created), otherwise the explicit zoneId. Zones don't gate
+   *  anything; this is just an analytics stamp. */
   private async resolveZoneId(dto: {
     lat?: number | null;
     lng?: number | null;
     zoneId?: string;
   }): Promise<string | undefined> {
     if (dto.lat != null && dto.lng != null) {
-      const zone = await this.zones.resolveOrCreate(dto.lat, dto.lng);
-      return zone.id;
+      return (await this.zones.containingZoneId(dto.lat, dto.lng)) ?? undefined;
     }
     return dto.zoneId;
   }
@@ -72,6 +72,12 @@ export class KitchensService {
       throw new BadRequestException(
         'Firebase token must include a phone number.',
       );
+    }
+
+    // Location is required — discovery is radius-based, so a kitchen without
+    // coordinates could never appear in any customer's results.
+    if (dto.lat == null || dto.lng == null) {
+      throw new BadRequestException('Kitchen location (lat/lng) is required.');
     }
 
     // Required photos: at least one kitchen photo + a photo of the cook.
@@ -252,27 +258,25 @@ export class KitchensService {
     });
   }
 
-  // ── Customer-facing ──────────────────────────────────────────────────
+  // ── Customer-facing radius discovery ─────────────────────────────────
   /**
-   * Discovery list: verified kitchens cooking today in a zone. Enriched with a
-   * server-side rating average/count and, when the caller passes their GPS,
-   * the straight-line distance (sorted nearest-first). `openNow` filters to
-   * kitchens currently within their operating hours. If no `zoneId` is given
-   * and the caller is a customer, their home zone is used by default.
+   * Radius-based discovery (NOT zone-gated). Returns verified kitchens within
+   * `discoveryRadiusM` (or the `radiusM` override) of the caller's GPS, computed
+   * server-side by haversine, each flagged `serviceable` (verified + cooking
+   * today + within hours + has plates) or dormant with a `dormantReason`. The
+   * top-level `state` lets the app render a normal list, a dimmed list, or a
+   * "not serving your area yet" screen:
+   *   serviceable   — ≥1 serviceable kitchen
+   *   dormant_only  — kitchens in radius, none serviceable
+   *   none_in_radius— no kitchens in radius
    */
   async list(
-    user: RequestUser,
-    opts: {
-      zoneId?: string;
-      openNow?: boolean;
-      lat?: number;
-      lng?: number;
-    } = {},
+    _user: RequestUser,
+    opts: { lat: number; lng: number; radiusM?: number },
   ) {
     const now = new Date();
-    // UTC-midnight of the local calendar day so it matches stored dates.
-    // Local midnight (new Date(y,m,d)) resolves to the previous UTC day in
-    // positive-offset zones like IST — see OrdersService.serviceDate().
+    // UTC-midnight of the local calendar day so it matches stored dates
+    // (see OrdersService.serviceDate() — IST would roll to the previous UTC day).
     const serviceDate = new Date(
       Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
     );
@@ -282,21 +286,20 @@ export class KitchensService {
       .toString()
       .padStart(2, '0')}`;
 
-    // Default to the customer's home zone when none is specified.
-    let zoneId = opts.zoneId;
-    if (!zoneId && user.role === 'customer') {
-      const me = await this.prisma.customer.findUnique({
-        where: { id: user.userId },
-        select: { homeZoneId: true },
-      });
-      zoneId = me?.homeZoneId ?? undefined;
-    }
+    const config = await this.prisma.platformConfig.findUniqueOrThrow({
+      where: { id: 1 },
+    });
+    const radius = Math.min(
+      Math.max(opts.radiusM ?? config.discoveryRadiusM, 1),
+      20000,
+    );
 
+    // Every verified kitchen that has coordinates (needed for distance).
     const kitchens = await this.prisma.kitchen.findMany({
       where: {
         status: KitchenStatus.verified,
-        ...(zoneId ? { zoneId } : {}),
-        dailyStatus: { some: { serviceDate, isCooking: true } },
+        lat: { not: null },
+        lng: { not: null },
       },
       select: {
         id: true,
@@ -313,41 +316,82 @@ export class KitchensService {
           where: { dayOfWeek },
           select: { openTime: true, closeTime: true },
         },
+        dailyStatus: {
+          where: { serviceDate },
+          select: { isCooking: true },
+        },
       },
     });
 
-    const hasGps = opts.lat != null && opts.lng != null;
+    // Distance filter (server-computed — never trust client distance).
+    const inRadius = kitchens
+      .map((k) => ({
+        k,
+        distanceM: Math.round(
+          this.zones.distanceM(opts.lat, opts.lng, k.lat!, k.lng!),
+        ),
+      }))
+      .filter((x) => x.distanceM <= radius);
 
-    let result = kitchens.map(({ ratings, hours, ...k }) => {
+    // One batch query: which in-radius kitchens have ≥1 orderable plate today.
+    const inRadiusIds = inRadius.map((x) => x.k.id);
+    const withPlates = inRadiusIds.length
+      ? await this.prisma.menuDailyAvailability.findMany({
+          where: {
+            serviceDate,
+            isAvailable: true,
+            platesRemaining: { gt: 0 },
+            menuItem: { kitchenId: { in: inRadiusIds }, isActive: true },
+          },
+          select: { menuItem: { select: { kitchenId: true } } },
+        })
+      : [];
+    const platesSet = new Set(withPlates.map((a) => a.menuItem.kitchenId));
+
+    const cards = inRadius.map(({ k, distanceM }) => {
+      const { ratings, hours, dailyStatus, ...card } = k;
       const ratingCount = ratings.length;
       const ratingAvg = ratingCount
         ? ratings.reduce((sum, r) => sum + r.stars, 0) / ratingCount
         : null;
+      const cooking = dailyStatus[0]?.isCooking === true;
       const today = hours[0];
-      const isOpenNow =
+      const withinHours =
         !!today &&
         currentTime >= today.openTime &&
         currentTime < today.closeTime;
-      const distanceM =
-        hasGps && k.lat != null && k.lng != null
-          ? Math.round(this.zones.distanceM(opts.lat!, opts.lng!, k.lat, k.lng))
-          : null;
-      return { ...k, ratingAvg, ratingCount, isOpenNow, distanceM };
+      const hasPlates = platesSet.has(k.id);
+      const serviceable = cooking && withinHours && hasPlates;
+      const dormantReason = serviceable
+        ? undefined
+        : !cooking
+          ? 'not_cooking_today'
+          : !withinHours
+            ? 'outside_hours'
+            : 'sold_out';
+      return {
+        ...card,
+        ratingAvg,
+        ratingCount,
+        distanceM,
+        serviceable,
+        dormantReason,
+      };
     });
 
-    if (opts.openNow) {
-      result = result.filter((k) => k.isOpenNow);
-    }
-
-    // Nearest-first when GPS is known; otherwise best-rated first.
-    result.sort((a, b) => {
-      if (a.distanceM != null && b.distanceM != null) {
-        return a.distanceM - b.distanceM;
-      }
-      return (b.ratingAvg ?? 0) - (a.ratingAvg ?? 0);
+    // Serviceable first, then nearest.
+    cards.sort((a, b) => {
+      if (a.serviceable !== b.serviceable) return a.serviceable ? -1 : 1;
+      return a.distanceM - b.distanceM;
     });
 
-    return result;
+    const state = cards.some((k) => k.serviceable)
+      ? 'serviceable'
+      : cards.length > 0
+        ? 'dormant_only'
+        : 'none_in_radius';
+
+    return { state, kitchens: cards };
   }
 
   async findOne(kitchenId: string) {

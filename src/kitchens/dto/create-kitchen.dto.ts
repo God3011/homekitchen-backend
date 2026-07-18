@@ -21,15 +21,14 @@ export class CreateKitchenDto {
   @IsString()
   addressLine?: string;
 
-  @IsOptional()
+  // Required — a kitchen without coordinates is undiscoverable (radius-based).
   @Type(() => Number)
   @IsNumber()
-  lat?: number;
+  lat: number;
 
-  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  lng?: number;
+  lng: number;
 
   @IsOptional()
   @IsUUID()

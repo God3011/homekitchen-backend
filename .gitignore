@@ -25,3 +25,6 @@ shareable-apks/
 
 # One-off DB backups written before destructive ops
 deleted-backup-*.json
+
+# Transient Claude Code worktrees (never commit)
+.claude/worktrees/

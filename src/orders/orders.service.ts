@@ -88,7 +88,10 @@ export class OrdersService {
       },
     });
     if (!dailyStatus?.isCooking) {
-      throw new BadRequestException('Kitchen is not cooking today.');
+      throw new BadRequestException({
+        message: 'Kitchen is not cooking today.',
+        dormantReason: 'not_cooking_today',
+      });
     }
 
     const dayOfWeek = new Date().getDay(); // 0=Sun .. 6=Sat
@@ -101,13 +104,19 @@ export class OrdersService {
       },
     });
     if (!hours) {
-      throw new BadRequestException('Kitchen is not open today.');
+      throw new BadRequestException({
+        message: 'Kitchen is not open today.',
+        dormantReason: 'outside_hours',
+      });
     }
     const now = new Date();
     const currentTime =
       `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     if (currentTime < hours.openTime || currentTime >= hours.closeTime) {
-      throw new BadRequestException('Kitchen is outside operating hours.');
+      throw new BadRequestException({
+        message: 'Kitchen is outside operating hours.',
+        dormantReason: 'outside_hours',
+      });
     }
 
     // --- Validate items ---
@@ -142,6 +151,13 @@ export class OrdersService {
     const platformFee = config.platformFeePaise;
     const grandTotal = foodTotal + platformFee + deliveryFee;
 
+    // Order inherits the customer's home zone (passive label, nullable).
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { homeZoneId: true },
+    });
+    const customerZoneId = customer?.homeZoneId ?? null;
+
     const order = await this.prisma.$transaction(async (tx) => {
       // --- Gap #6: decrement plate counts atomically ---
       for (const line of dto.items) {
@@ -158,9 +174,10 @@ export class OrdersService {
           },
         });
         if (updated.count === 0) {
-          throw new BadRequestException(
-            `"${item.name}" has insufficient plates available.`,
-          );
+          throw new BadRequestException({
+            message: `"${item.name}" has insufficient plates available.`,
+            dormantReason: 'sold_out',
+          });
         }
       }
 
@@ -168,6 +185,9 @@ export class OrdersService {
         data: {
           customerId,
           kitchenId: dto.kitchenId,
+          // Zone is a passive label inherited from the customer's home zone
+          // (nullable — a customer outside all zones still orders fine).
+          zoneId: customerZoneId,
           fulfillment: dto.fulfillment,
           status: OrderStatus.received,
           foodTotalPaise: foodTotal,

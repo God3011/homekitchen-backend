@@ -25,8 +25,7 @@ export class CustomersService {
     lng?: number | null;
   }): Promise<string | undefined> {
     if (dto.lat != null && dto.lng != null) {
-      const zone = await this.zones.resolveOrCreate(dto.lat, dto.lng);
-      return zone.id;
+      return (await this.zones.containingZoneId(dto.lat, dto.lng)) ?? undefined;
     }
     return undefined;
   }
