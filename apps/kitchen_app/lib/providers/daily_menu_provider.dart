@@ -163,10 +163,19 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
     ]);
   }
 
-  /// Set today's plate count for a dish (staged). Clamped at 0.
+  /// Set today's plate count for a dish (staged). Clamped at 0. Mirrors the
+  /// backend's sold-preserving math so the "X left · Y sold" line stays correct
+  /// live: remaining = max(0, newTotal - soldSoFar).
   void setPlates(String id, int total) {
     if (total < 0) total = 0;
-    _mutate(id, (d) => d.copyWith(platesTotal: total));
+    _mutate(id, (d) {
+      final sold = (d.platesTotal - d.platesRemaining).clamp(0, d.platesTotal);
+      final remaining = total - sold;
+      return d.copyWith(
+        platesTotal: total,
+        platesRemaining: remaining < 0 ? 0 : remaining,
+      );
+    });
   }
 
   void incPlates(String id, [int by = 1]) {
@@ -184,9 +193,15 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
       _mutate(id, (d) => d.copyWith(isAvailable: available));
 
   /// Quick-add a catalog dish to today with a default plate count (staged).
+  /// A fresh add has no sales yet, so remaining = total.
   void quickAdd(String id, {int plates = 10}) => _mutate(
         id,
-        (d) => d.copyWith(onMenu: true, platesTotal: plates, isAvailable: true),
+        (d) => d.copyWith(
+          onMenu: true,
+          platesTotal: plates,
+          platesRemaining: plates,
+          isAvailable: true,
+        ),
       );
 
   /// Remove a dish from today's menu (staged; deletes its stock row on Save).
@@ -216,7 +231,12 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
       baseline: [...state.baseline, base],
       working: [
         ...state.working,
-        base.copyWith(onMenu: true, platesTotal: plates, isAvailable: true),
+        base.copyWith(
+          onMenu: true,
+          platesTotal: plates,
+          platesRemaining: plates,
+          isAvailable: true,
+        ),
       ],
     );
   }

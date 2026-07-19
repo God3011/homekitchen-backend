@@ -58,14 +58,14 @@ class MenuScreen extends ConsumerWidget {
               ),
           ],
         ),
-        bottomNavigationBar: (state.dirty && !state.readOnly)
-            ? _SaveBar(dateStr: dateStr)
-            : null,
+        // Save bar sits at the bottom of the body Column (not a nested
+        // bottomNavigationBar). Its buttons must be flex children — see _SaveBar.
         body: Column(
           children: [
             _DateChips(selected: selected),
             const Divider(height: 1),
             Expanded(child: _Body(dateStr: dateStr)),
+            if (state.dirty && !state.readOnly) _SaveBar(dateStr: dateStr),
           ],
         ),
       ),
@@ -499,16 +499,27 @@ class _SaveBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(dailyMenuProvider(dateStr));
     final notifier = ref.read(dailyMenuProvider(dateStr).notifier);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          OutlinedButton(
-            onPressed: state.saving ? null : notifier.discard,
-            child: const Text('Discard'),
+    return Material(
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          // Both buttons are Expanded: the app theme sets button
+          // minimumSize.width = infinity (full-width buttons), which demands
+          // infinite width if placed as a NON-flex Row child (a Row measures
+          // non-flex children unbounded). Flex children get a tight bounded
+          // width, so the theme's infinite min is clamped and layout is safe.
+          child: Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: state.saving ? null : notifier.discard,
+              child: const Text('Discard'),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
+            flex: 2,
             child: FilledButton(
               onPressed: state.saving
                   ? null
@@ -536,7 +547,8 @@ class _SaveBar extends ConsumerWidget {
                   : const Text('Save'),
             ),
           ),
-        ]),
+          ]),
+        ),
       ),
     );
   }
