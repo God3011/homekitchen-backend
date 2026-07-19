@@ -1,12 +1,25 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:shared/shared.dart';
 
 import '../providers/kitchen_provider.dart';
 import '../widgets/order_card.dart';
 import 'order_detail_screen.dart';
+
+// ── date helpers ──────────────────────────────────────────────────────────────
+DateTime _today() {
+  final n = DateTime.now();
+  return DateTime(n.year, n.month, n.day);
+}
+
+String _humanDate(DateTime d) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${d.day} ${months[d.month - 1]} ${d.year}';
+}
 
 class OrdersScreen extends ConsumerStatefulWidget {
   const OrdersScreen({super.key});
@@ -19,13 +32,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   Timer? _pollTimer;
   String? _statusFilter;
 
-  // Date filter — null means "show all dates"; default is today.
+  // null = "All dates"; otherwise filters by that local calendar day.
   DateTime? _dateFilter = _today();
-
-  static DateTime _today() {
-    final n = DateTime.now();
-    return DateTime(n.year, n.month, n.day);
-  }
 
   static const _statusFilters = <String?, String>{
     null: 'All',
@@ -49,84 +57,27 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     super.dispose();
   }
 
-  /// Returns true if [order] was placed on the selected date (local time).
   bool _matchesDate(Order order) {
     if (_dateFilter == null) return true;
     final l = order.placedAt.toLocal();
-    final d = DateTime(l.year, l.month, l.day);
-    return d == _dateFilter;
-  }
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dateFilter ?? DateTime.now(),
-      firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
-      helpText: 'Filter by order date',
-    );
-    if (picked != null) {
-      setState(
-          () => _dateFilter = DateTime(picked.year, picked.month, picked.day));
-    }
+    return DateTime(l.year, l.month, l.day) == _dateFilter;
   }
 
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(ordersProvider(_statusFilter));
-    final scheme = Theme.of(context).colorScheme;
-
-    final isToday =
-        _dateFilter != null && _dateFilter == _today();
-    final dateLabel = _dateFilter == null
-        ? 'All dates'
-        : isToday
-            ? 'Today'
-            : DateFormat('d MMM yyyy').format(_dateFilter!);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Orders')),
       body: Column(
         children: [
-          // ── Date picker row ──────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text(dateLabel),
-                    style: OutlinedButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                    onPressed: _pickDate,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // "Today" shortcut — shown when not already on today
-                if (!isToday)
-                  ActionChip(
-                    label: const Text('Today'),
-                    avatar: const Icon(Icons.today, size: 16),
-                    onPressed: () => setState(() => _dateFilter = _today()),
-                  ),
-                // Clear to "all dates"
-                if (_dateFilter != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: IconButton(
-                      tooltip: 'Show all dates',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () => setState(() => _dateFilter = null),
-                    ),
-                  ),
-              ],
-            ),
+          // ── Date chips (same style as Menu screen) ─────────────────
+          _OrderDateChips(
+            selected: _dateFilter,
+            onSelect: (d) => setState(() => _dateFilter = d),
           ),
-          // ── Status filter chips ──────────────────────────────────────
+          const Divider(height: 1),
+          // ── Status filter chips ─────────────────────────────────────
           SizedBox(
             height: 48,
             child: ListView(
@@ -139,19 +90,20 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                   child: FilterChip(
                     label: Text(e.value),
                     selected: selected,
-                    onSelected: (_) {
-                      setState(() => _statusFilter = e.key);
-                    },
+                    onSelected: (_) => setState(() => _statusFilter = e.key),
                   ),
                 );
               }).toList(),
             ),
           ),
-          // ── Orders list ──────────────────────────────────────────────
+          // ── Orders list ─────────────────────────────────────────────
           Expanded(
             child: ordersAsync.when(
               data: (allOrders) {
                 final orders = allOrders.where(_matchesDate).toList();
+                final dateLabel = _dateFilter == null
+                    ? 'any date'
+                    : _humanDate(_dateFilter!);
 
                 if (orders.isEmpty) {
                   return Center(
@@ -159,13 +111,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.receipt_long,
-                            size: 48, color: scheme.outlineVariant),
+                            size: 48,
+                            color: Theme.of(context).colorScheme.outlineVariant),
                         const SizedBox(height: 12),
                         Text(
-                          _dateFilter != null
-                              ? 'No orders on $dateLabel'
-                              : 'No orders yet',
-                          style: TextStyle(color: scheme.outline),
+                          'No orders for $dateLabel',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline),
                         ),
                       ],
                     ),
@@ -173,18 +125,15 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(ordersProvider(_statusFilter));
-                  },
+                  onRefresh: () async =>
+                      ref.invalidate(ordersProvider(_statusFilter)),
                   child: ListView.builder(
                     itemCount: orders.length,
                     padding: const EdgeInsets.only(top: 8, bottom: 80),
-                    itemBuilder: (context, i) {
-                      return OrderCard(
-                        order: orders[i],
-                        onTap: () => _openDetail(context, orders[i]),
-                      );
-                    },
+                    itemBuilder: (context, i) => OrderCard(
+                      order: orders[i],
+                      onTap: () => _openDetail(context, orders[i]),
+                    ),
                   ),
                 );
               },
@@ -199,9 +148,72 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
 
   void _openDetail(BuildContext context, Order order) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OrderDetailScreen(orderId: order.id),
-      ),
+      MaterialPageRoute(builder: (_) => OrderDetailScreen(orderId: order.id)),
+    );
+  }
+}
+
+// ── Date chip selector (mirrors Menu screen _DateChips + adds "All") ──────────
+class _OrderDateChips extends StatelessWidget {
+  const _OrderDateChips({required this.selected, required this.onSelect});
+
+  /// null = all dates.
+  final DateTime? selected;
+  final ValueChanged<DateTime?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = _today();
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    final isAll = selected == null;
+    final isToday = selected == today;
+    final isYesterday = selected == yesterday;
+    final isOther = !isAll && !isToday && !isYesterday;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(children: [
+        // "All dates" chip
+        ChoiceChip(
+          label: const Text('All dates'),
+          selected: isAll,
+          onSelected: (_) => onSelect(null),
+        ),
+        const SizedBox(width: 8),
+        ChoiceChip(
+          label: const Text('Today'),
+          selected: isToday,
+          onSelected: (_) => onSelect(today),
+        ),
+        const SizedBox(width: 8),
+        ChoiceChip(
+          label: const Text('Yesterday'),
+          selected: isYesterday,
+          onSelected: (_) => onSelect(yesterday),
+        ),
+        const SizedBox(width: 8),
+        // Calendar chip — shows the picked date when a specific other day
+        // is selected; otherwise shows "Select date".
+        ChoiceChip(
+          avatar: const Icon(Icons.calendar_today, size: 16),
+          label: Text(isOther ? _humanDate(selected!) : 'Select date'),
+          selected: isOther,
+          onSelected: (_) async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: selected ?? today,
+              firstDate: DateTime(2024),
+              lastDate: today,
+              helpText: 'Filter by order date',
+            );
+            if (picked != null && context.mounted) {
+              onSelect(DateTime(picked.year, picked.month, picked.day));
+            }
+          },
+        ),
+      ]),
     );
   }
 }
