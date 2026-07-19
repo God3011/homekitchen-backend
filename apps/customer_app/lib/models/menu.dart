@@ -9,6 +9,7 @@ class MenuDish {
   final String name;
   final int pricePaise;
   final String? photoUrl;
+  final bool isVeg;
   final List<String> preferences;
   final int platesRemaining;
   final bool isAvailable;
@@ -18,6 +19,7 @@ class MenuDish {
     required this.name,
     required this.pricePaise,
     this.photoUrl,
+    this.isVeg = true,
     this.preferences = const [],
     this.platesRemaining = 0,
     this.isAvailable = false,
@@ -34,6 +36,7 @@ class MenuDish {
       name: json['name'] as String,
       pricePaise: json['pricePaise'] as int,
       photoUrl: json['photoUrl'] as String?,
+      isVeg: json['isVeg'] as bool? ?? true,
       preferences: ((json['preferences'] as List<dynamic>?) ?? const [])
           .map((e) => (e as Map<String, dynamic>)['preference'] as String)
           .toList(),
@@ -77,7 +80,7 @@ class KitchenMenu {
         .map((e) => MenuDish.fromJson(e as Map<String, dynamic>))
         .toList();
     if (uncategorized.isNotEmpty) {
-      sections.add(MenuSection(name: 'Other', dishes: uncategorized));
+      sections.add(MenuSection(name: 'Menu', dishes: uncategorized));
     }
 
     return KitchenMenu(sections: sections);
