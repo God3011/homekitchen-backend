@@ -111,12 +111,37 @@ model Customer {
   signupMethod   String   @default("phone_otp") @map("signup_method")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  homeZone   Zone?      @relation(fields: [homeZoneId], references: [id])
+  homeZone   Zone?             @relation(fields: [homeZoneId], references: [id])
   orders     Order[]
   ratings    Rating[]
   favorites  Favorite[]
+  addresses  CustomerAddress[]
 
   @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Customer saved locations (Customer App)
+// ---------------------------------------------------------------------------
+// A saved location is NOT a delivery destination (the app is pickup-only). It is
+// a named point (lat/lng + user label) that sets which coordinates radius-based
+// discovery searches around. Coordinates are required — a text-only address is
+// useless because discovery keys off lat/lng. Exactly one address per customer is
+// the default (active) one at a time; the default's lat/lng is the search centre.
+model CustomerAddress {
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  label       String
+  addressLine String?  @map("address_line")
+  lat         Float
+  lng         Float
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
 }
 
 // ---------------------------------------------------------------------------

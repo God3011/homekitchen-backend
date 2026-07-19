@@ -1807,4 +1807,187 @@ describe('E2E: Full order lifecycle', () => {
       .send({ kitchenId, amountPaise: 100, payoutDate: todayDateStr() })
       .expect(403);
   });
+
+  // =====================================================================
+  // Step 21 — Customer saved locations (named lat/lng discovery centres)
+  // =====================================================================
+  // customer-test-token (fb-customer-001) is the actor; customer2-test-token
+  // is used to prove cross-customer isolation.
+  let homeAddrId: string;
+  let officeAddrId: string;
+  let gymAddrId: string;
+
+  const authCust = (req: request.Test) =>
+    req.set('Authorization', 'Bearer customer-test-token');
+
+  it('21a. A new customer has no saved locations', async () => {
+    const res = await authCust(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('21b. First address is auto-set as default', async () => {
+    const res = await authCust(
+      request(app.getHttpServer()).post('/api/customers/me/addresses'),
+    )
+      .send({
+        label: 'Home',
+        addressLine: 'Flat 1, Gachibowli',
+        lat: 17.4401,
+        lng: 78.3489,
+      })
+      .expect(201);
+    homeAddrId = res.body.id;
+    expect(res.body.label).toBe('Home');
+    expect(res.body.lat).toBeCloseTo(17.4401);
+    expect(res.body.isDefault).toBe(true);
+  });
+
+  it('21c. A second address is not default unless requested; list is default-first', async () => {
+    const res = await authCust(
+      request(app.getHttpServer()).post('/api/customers/me/addresses'),
+    )
+      .send({ label: 'Office', lat: 17.4479, lng: 78.3915 })
+      .expect(201);
+    officeAddrId = res.body.id;
+    expect(res.body.isDefault).toBe(false);
+
+    const list = await authCust(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(list.body).toHaveLength(2);
+    expect(list.body[0].id).toBe(homeAddrId); // default first
+    expect(list.body.filter((a: any) => a.isDefault)).toHaveLength(1);
+  });
+
+  it('21d. Creating with isDefault=true moves the default and unsets the old one', async () => {
+    const res = await authCust(
+      request(app.getHttpServer()).post('/api/customers/me/addresses'),
+    )
+      .send({ label: 'Gym', lat: 17.435, lng: 78.4, isDefault: true })
+      .expect(201);
+    gymAddrId = res.body.id;
+    expect(res.body.isDefault).toBe(true);
+
+    const list = await authCust(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(list.body).toHaveLength(3);
+    expect(list.body[0].id).toBe(gymAddrId);
+    expect(list.body.filter((a: any) => a.isDefault)).toHaveLength(1);
+    expect(list.body.find((a: any) => a.id === homeAddrId).isDefault).toBe(false);
+  });
+
+  it('21e. Edit label / addressLine / coordinates', async () => {
+    const res = await authCust(
+      request(app.getHttpServer()).patch(
+        `/api/customers/me/addresses/${officeAddrId}`,
+      ),
+    )
+      .send({
+        label: 'Work',
+        addressLine: 'Tower B, Hitech City',
+        lat: 17.45,
+        lng: 78.38,
+      })
+      .expect(200);
+    expect(res.body.label).toBe('Work');
+    expect(res.body.addressLine).toBe('Tower B, Hitech City');
+    expect(res.body.lat).toBeCloseTo(17.45);
+    expect(res.body.lng).toBeCloseTo(78.38);
+  });
+
+  it('21f. Setting an address active moves the default to it', async () => {
+    const res = await authCust(
+      request(app.getHttpServer()).patch(
+        `/api/customers/me/addresses/${officeAddrId}/default`,
+      ),
+    ).expect(200);
+    expect(res.body.isDefault).toBe(true);
+
+    const list = await authCust(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(list.body.filter((a: any) => a.isDefault)).toHaveLength(1);
+    expect(list.body[0].id).toBe(officeAddrId);
+  });
+
+  it('21g. Discovery accepts the active address as the search centre', async () => {
+    // The app passes the default address lat/lng to the discovery endpoint.
+    const res = await authCust(
+      request(app.getHttpServer()).get(
+        '/api/kitchens?lat=17.45&lng=78.38',
+      ),
+    ).expect(200);
+    expect(res.body).toHaveProperty('state');
+  });
+
+  it('21h. Deleting the active address promotes another to default', async () => {
+    await authCust(
+      request(app.getHttpServer()).delete(
+        `/api/customers/me/addresses/${officeAddrId}`,
+      ),
+    ).expect(200);
+
+    const list = await authCust(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(list.body).toHaveLength(2);
+    expect(list.body.find((a: any) => a.id === officeAddrId)).toBeUndefined();
+    // Exactly one survivor is now the default — never zero while addresses remain.
+    expect(list.body.filter((a: any) => a.isDefault)).toHaveLength(1);
+  });
+
+  it('21i. Coordinates and label are required', async () => {
+    await authCust(
+      request(app.getHttpServer()).post('/api/customers/me/addresses'),
+    )
+      .send({ label: 'No coords' }) // missing lat/lng
+      .expect(400);
+
+    await authCust(
+      request(app.getHttpServer()).post('/api/customers/me/addresses'),
+    )
+      .send({ lat: 17.44, lng: 78.35 }) // missing label
+      .expect(400);
+  });
+
+  it('21j. A customer cannot read or mutate another customer\'s addresses', async () => {
+    const authCust2 = (req: request.Test) =>
+      req.set('Authorization', 'Bearer customer2-test-token');
+
+    // customer2's list never includes customer1's addresses.
+    const list2 = await authCust2(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(list2.body.find((a: any) => a.id === homeAddrId)).toBeUndefined();
+
+    // Reads/mutations of customer1's address by customer2 → 404 (no leak).
+    await authCust2(
+      request(app.getHttpServer()).patch(
+        `/api/customers/me/addresses/${homeAddrId}`,
+      ),
+    )
+      .send({ label: 'Hijacked' })
+      .expect(404);
+
+    await authCust2(
+      request(app.getHttpServer()).patch(
+        `/api/customers/me/addresses/${homeAddrId}/default`,
+      ),
+    ).expect(404);
+
+    await authCust2(
+      request(app.getHttpServer()).delete(
+        `/api/customers/me/addresses/${homeAddrId}`,
+      ),
+    ).expect(404);
+
+    // customer1's default is untouched by the failed attempts.
+    const list1 = await authCust(
+      request(app.getHttpServer()).get('/api/customers/me/addresses'),
+    ).expect(200);
+    expect(list1.body.filter((a: any) => a.isDefault)).toHaveLength(1);
+  });
 });
