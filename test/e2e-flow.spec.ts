@@ -35,6 +35,11 @@ import { NotificationsService } from '../src/notifications/notifications.service
 import { StorageService } from '../src/storage/storage.service';
 import { RazorpayService } from '../src/payments/razorpay.service';
 import { OrdersService } from '../src/orders/orders.service';
+import {
+  istDayOfWeek,
+  istServiceDate,
+  istTodayStr,
+} from '../src/common/service-date';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -139,13 +144,11 @@ class MockStorageService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Mirrors OrdersService.serviceDate() — local midnight, then take its UTC
- *  date string so Prisma stores the same DATE value in Postgres. */
+/** The "YYYY-MM-DD" the backend treats as today — IST calendar day. Mirrors
+ *  OrdersService.serviceDate() / KitchensService.list(), which now resolve the
+ *  service day in Asia/Kolkata (see src/common/service-date). */
 function todayDateStr(): string {
-  // Local calendar day as "YYYY-MM-DD" — matches OrdersService.serviceDate(),
-  // which now resolves to UTC-midnight of the local day.
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  return istTodayStr();
 }
 
 /** Create / drop the test database via a throw-away PrismaClient aimed at
@@ -368,7 +371,7 @@ describe('E2E: Full order lifecycle', () => {
   });
 
   it('3f. Kitchen sets operating hours covering current time', async () => {
-    const dayOfWeek = new Date().getDay(); // 0=Sun … 6=Sat
+    const dayOfWeek = istDayOfWeek(); // 0=Sun … 6=Sat, in IST
     const res = await request(app.getHttpServer())
       .put('/api/kitchens/me/hours')
       .set('Authorization', 'Bearer kitchen-test-token')
@@ -1518,5 +1521,154 @@ describe('E2E: Full order lifecycle', () => {
 
     const row = await prisma.order.findUnique({ where: { id: order.body.id } });
     expect(row!.zoneId).toBeNull();
+  });
+
+  // =====================================================================
+  // Step 19 — Daily menu management (GET/PUT /api/menu/daily)
+  //
+  // The daily menu is every ACTIVE catalog item annotated with today's stock.
+  // A dish with no MenuDailyAvailability row for the date reads onMenu=false —
+  // "the menu clears daily" is emergent from the (menuItemId, serviceDate) key,
+  // not a wipe job. Uses its own fresh dish so the stock math is deterministic.
+  // =====================================================================
+  let dailyDishId: string;
+
+  it('19a. Fresh dish appears on the daily menu with onMenu=false', async () => {
+    const create = await request(app.getHttpServer())
+      .post('/api/menu/items')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ name: 'Daily Test Dosa', pricePaise: 8000 })
+      .expect(201);
+    dailyDishId = create.body.id;
+
+    const res = await request(app.getHttpServer())
+      .get('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(res.body.serviceDate).toBe(todayDateStr());
+    expect(res.body.readOnly).toBe(false);
+    const dish = res.body.dishes.find((d: any) => d.menuItemId === dailyDishId);
+    expect(dish).toBeTruthy();
+    expect(dish.onMenu).toBe(false);
+    expect(dish.platesTotal).toBe(0);
+    expect(dish.platesRemaining).toBe(0);
+    expect(dish.isAvailable).toBe(false);
+  });
+
+  it('19b. PUT upserts stock; GET reflects onMenu=true with correct plates', async () => {
+    await request(app.getHttpServer())
+      .put('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({
+        date: todayDateStr(),
+        upserts: [{ menuItemId: dailyDishId, platesTotal: 10, isAvailable: true }],
+      })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    const dish = res.body.dishes.find((d: any) => d.menuItemId === dailyDishId);
+    expect(dish.onMenu).toBe(true);
+    expect(dish.platesTotal).toBe(10);
+    expect(dish.platesRemaining).toBe(10);
+    expect(dish.isAvailable).toBe(true);
+  });
+
+  it('19c. Editing platesTotal preserves sold plates (10→12 after 4 sold → 8 left)', async () => {
+    // Simulate 4 plates sold today (4 orders), leaving 6 of 10 remaining.
+    await prisma.menuDailyAvailability.update({
+      where: {
+        menuItemId_serviceDate: {
+          menuItemId: dailyDishId,
+          serviceDate: istServiceDate(),
+        },
+      },
+      data: { platesRemaining: 6 },
+    });
+
+    await request(app.getHttpServer())
+      .put('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({
+        upserts: [{ menuItemId: dailyDishId, platesTotal: 12, isAvailable: true }],
+      })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    const dish = res.body.dishes.find((d: any) => d.menuItemId === dailyDishId);
+    expect(dish.platesTotal).toBe(12);
+    // sold = 10 - 6 = 4;  remaining = max(0, 12 - 4) = 8. Sold never resurrected.
+    expect(dish.platesRemaining).toBe(8);
+  });
+
+  it('19d. Setting platesTotal below already-sold clamps remaining to 0', async () => {
+    // 4 sold so far; drop total to 3 (< sold) → remaining must clamp to 0.
+    await request(app.getHttpServer())
+      .put('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({
+        upserts: [{ menuItemId: dailyDishId, platesTotal: 3, isAvailable: true }],
+      })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    const dish = res.body.dishes.find((d: any) => d.menuItemId === dailyDishId);
+    expect(dish.platesTotal).toBe(3);
+    expect(dish.platesRemaining).toBe(0);
+  });
+
+  it('19e. Removal deletes today\'s row → dish reads onMenu=false again', async () => {
+    await request(app.getHttpServer())
+      .put('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ removals: [dailyDishId] })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    const dish = res.body.dishes.find((d: any) => d.menuItemId === dailyDishId);
+    expect(dish.onMenu).toBe(false);
+    expect(dish.platesTotal).toBe(0);
+  });
+
+  it('19f. PUT for a past date is rejected (400)', async () => {
+    await request(app.getHttpServer())
+      .put('/api/menu/daily')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({
+        date: '2020-01-01',
+        upserts: [{ menuItemId: dailyDishId, platesTotal: 5 }],
+      })
+      .expect(400);
+  });
+
+  it('19g. GET for a past date returns readOnly=true with no rows', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/menu/daily?date=2020-01-01')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(res.body.serviceDate).toBe('2020-01-01');
+    expect(res.body.readOnly).toBe(true);
+    // No availability rows existed on that date → every dish reads onMenu=false.
+    expect(res.body.dishes.every((d: any) => d.onMenu === false)).toBe(true);
+  });
+
+  it('19h. GET for a future date is rejected (400)', async () => {
+    await request(app.getHttpServer())
+      .get('/api/menu/daily?date=2999-01-01')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(400);
   });
 });

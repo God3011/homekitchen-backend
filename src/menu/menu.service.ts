@@ -13,7 +13,13 @@ import {
   SetAvailabilityDto,
   SetPreferencesDto,
 } from './dto/menu-actions.dto';
+import { SaveDailyMenuDto } from './dto/daily-menu.dto';
 import { StorageService, UploadFile } from '../storage/storage.service';
+import {
+  formatServiceDate,
+  istServiceDate,
+  parseServiceDate,
+} from '../common/service-date';
 
 @Injectable()
 export class MenuService {
@@ -162,7 +168,7 @@ export class MenuService {
     dto: SetAvailabilityDto,
   ) {
     await this.ownsItem(kitchenId, itemId);
-    const serviceDate = new Date(dto.serviceDate);
+    const serviceDate = parseServiceDate(dto.serviceDate);
 
     return this.prisma.menuDailyAvailability.upsert({
       where: {
@@ -209,17 +215,157 @@ export class MenuService {
     });
   }
 
+  // ── Daily menu ("today's menu" management screen) ─────────────────────
+  //
+  // The daily menu is NOT a separate catalog: it is every ACTIVE MenuItem
+  // annotated with THIS date's MenuDailyAvailability. A fresh day simply has no
+  // availability rows, so every dish reads back `onMenu: false` — the "menu
+  // clears daily" behaviour is emergent from the (menuItemId, serviceDate) key,
+  // NOT a wipe job. Writing rows here is literally how a kitchen goes live for
+  // the day: discovery treats a kitchen as serviceable only when it has ≥1 row
+  // with platesRemaining > 0 AND isAvailable (see KitchensService.list).
+
+  /**
+   * The catalog annotated with a given date's stock. `date` defaults to today
+   * (IST). Past dates are returned `readOnly: true` (history is view-only);
+   * future dates are rejected (v1 is same-day only).
+   */
+  async getDailyMenu(kitchenId: string, date?: string) {
+    const today = istServiceDate();
+    let serviceDate = today;
+    if (date) {
+      try {
+        serviceDate = parseServiceDate(date);
+      } catch (e) {
+        throw new BadRequestException((e as Error).message);
+      }
+      if (serviceDate.getTime() > today.getTime()) {
+        throw new BadRequestException('Cannot view a future service date.');
+      }
+    }
+    const readOnly = serviceDate.getTime() !== today.getTime();
+
+    const items = await this.prisma.menuItem.findMany({
+      where: { kitchenId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      include: { availability: { where: { serviceDate } } },
+    });
+
+    const dishes = items.map((it) => {
+      const a = it.availability[0];
+      return {
+        menuItemId: it.id,
+        name: it.name,
+        pricePaise: it.pricePaise,
+        photoUrl: it.photoUrl,
+        onMenu: !!a,
+        platesTotal: a?.platesTotal ?? 0,
+        platesRemaining: a?.platesRemaining ?? 0,
+        isAvailable: a?.isAvailable ?? false,
+      };
+    });
+
+    return { serviceDate: formatServiceDate(serviceDate), readOnly, dishes };
+  }
+
+  /**
+   * Batch-write TODAY's menu in one transaction: upsert stock rows and delete
+   * removed ones. Writes to any date other than today (IST) are rejected — past
+   * dates are immutable history and v1 has no future scheduling.
+   *
+   * Stock math preserves mid-day sales:
+   *  - New add  → platesRemaining = platesTotal (all fresh).
+   *  - Edit     → sold = oldTotal - oldRemaining;
+   *               platesRemaining = max(0, newTotal - sold).
+   * Sold plates are never resurrected and remaining never goes negative.
+   */
+  async saveDailyMenu(kitchenId: string, dto: SaveDailyMenuDto) {
+    const today = istServiceDate();
+
+    if (dto.date) {
+      let requested: Date;
+      try {
+        requested = parseServiceDate(dto.date);
+      } catch (e) {
+        throw new BadRequestException((e as Error).message);
+      }
+      if (requested.getTime() !== today.getTime()) {
+        throw new BadRequestException(
+          'The daily menu can only be edited for today.',
+        );
+      }
+    }
+
+    const upserts = dto.upserts ?? [];
+    const removals = dto.removals ?? [];
+
+    // Every referenced dish must be one of this kitchen's ACTIVE catalog items.
+    const ids = [
+      ...new Set([...upserts.map((u) => u.menuItemId), ...removals]),
+    ];
+    if (ids.length) {
+      const owned = await this.prisma.menuItem.findMany({
+        where: { id: { in: ids }, kitchenId, isActive: true },
+        select: { id: true },
+      });
+      if (owned.length !== ids.length) {
+        throw new ForbiddenException(
+          'One or more dishes are not part of your active menu.',
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const u of upserts) {
+        const key = {
+          menuItemId_serviceDate: {
+            menuItemId: u.menuItemId,
+            serviceDate: today,
+          },
+        };
+        const existing = await tx.menuDailyAvailability.findUnique({
+          where: key,
+        });
+        const isAvailable = u.isAvailable ?? true;
+        if (!existing) {
+          await tx.menuDailyAvailability.create({
+            data: {
+              menuItemId: u.menuItemId,
+              serviceDate: today,
+              platesTotal: u.platesTotal,
+              platesRemaining: u.platesTotal,
+              isAvailable,
+            },
+          });
+        } else {
+          // Preserve plates already sold today; clamp remaining to [0, …].
+          const sold = existing.platesTotal - existing.platesRemaining;
+          const newRemaining = Math.max(0, u.platesTotal - sold);
+          await tx.menuDailyAvailability.update({
+            where: key,
+            data: {
+              platesTotal: u.platesTotal,
+              platesRemaining: newRemaining,
+              isAvailable,
+            },
+          });
+        }
+      }
+      if (removals.length) {
+        await tx.menuDailyAvailability.deleteMany({
+          where: { menuItemId: { in: removals }, serviceDate: today },
+        });
+      }
+    });
+
+    return this.getDailyMenu(kitchenId);
+  }
+
   // ── Customer-facing ──────────────────────────────────────────────────
   async getKitchenMenu(kitchenId: string) {
-    // UTC-midnight of the local calendar day, so today's availability rows match
-    // how they're stored and how OrdersService.serviceDate() reads them. Using
-    // local midnight (new Date(y,m,d)) resolves to the PREVIOUS UTC day in
-    // positive-offset zones like IST — which showed yesterday's stock and made
-    // orders fail with "insufficient plates".
-    const now = new Date();
-    const serviceDate = new Date(
-      Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
-    );
+    // Today's IST service date — matches how availability rows are stored and
+    // how OrdersService reads them, so the customer sees today's stock.
+    const serviceDate = istServiceDate();
 
     const [categories, uncategorized] = await Promise.all([
       this.prisma.menuCategory.findMany({

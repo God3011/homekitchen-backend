@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, Param, Patch, Post, Put,
+  Body, Controller, Delete, Get, Param, Patch, Post, Put, Query,
   UploadedFile, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -13,6 +13,7 @@ import {
   SetAvailabilityDto,
   SetPreferencesDto,
 } from './dto/menu-actions.dto';
+import { SaveDailyMenuDto } from './dto/daily-menu.dto';
 import { CurrentUser, RequestUser } from '../auth/decorators';
 import { Roles } from '../auth/roles.guard';
 
@@ -101,6 +102,25 @@ export class MenuController {
     @UploadedFile() photo: UploadFile,
   ) {
     return this.menu.uploadItemPhoto(user.userId, id, photo);
+  }
+
+  // --- Seller: daily menu (today's stock) ---
+  @Roles('kitchen')
+  @Get('daily')
+  getDailyMenu(
+    @CurrentUser() user: RequestUser,
+    @Query('date') date?: string,
+  ) {
+    return this.menu.getDailyMenu(user.userId, date);
+  }
+
+  @Roles('kitchen')
+  @Put('daily')
+  saveDailyMenu(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: SaveDailyMenuDto,
+  ) {
+    return this.menu.saveDailyMenu(user.userId, dto);
   }
 
   @Roles('kitchen')

@@ -23,6 +23,12 @@ import {
 import { StorageService, UploadFile } from '../storage/storage.service';
 import { ZonesService } from '../zones/zones.service';
 import { RequestUser } from '../auth/decorators';
+import {
+  istDayOfWeek,
+  istServiceDate,
+  istTimeHHMM,
+  parseServiceDate,
+} from '../common/service-date';
 
 /** Photo files submitted with the multipart signup request. */
 export interface SignupFiles {
@@ -201,7 +207,7 @@ export class KitchensService {
 
   // ── Daily status ("Cooking Today?" toggle) ───────────────────────────
   setDailyStatus(kitchenId: string, dto: SetDailyStatusDto) {
-    const serviceDate = new Date(dto.serviceDate);
+    const serviceDate = parseServiceDate(dto.serviceDate);
 
     return this.prisma.kitchenDailyStatus.upsert({
       where: {
@@ -213,7 +219,7 @@ export class KitchensService {
   }
 
   getDailyStatus(kitchenId: string, date: string) {
-    const serviceDate = new Date(date);
+    const serviceDate = parseServiceDate(date);
     return this.prisma.kitchenDailyStatus.findUnique({
       where: {
         kitchenId_serviceDate: { kitchenId, serviceDate },
@@ -274,17 +280,11 @@ export class KitchensService {
     _user: RequestUser,
     opts: { lat: number; lng: number; radiusM?: number },
   ) {
-    const now = new Date();
-    // UTC-midnight of the local calendar day so it matches stored dates
-    // (see OrdersService.serviceDate() — IST would roll to the previous UTC day).
-    const serviceDate = new Date(
-      Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
-    );
-    const dayOfWeek = now.getDay(); // 0=Sun .. 6=Sat
-    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, '0')}`;
+    // Today's IST service date / weekday / wall-clock — the menu day rolls over
+    // at IST midnight, consistent with orders and the daily-menu screen.
+    const serviceDate = istServiceDate();
+    const dayOfWeek = istDayOfWeek(); // 0=Sun .. 6=Sat
+    const currentTime = istTimeHHMM();
 
     const config = await this.prisma.platformConfig.findUniqueOrThrow({
       where: { id: 1 },

@@ -17,6 +17,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { RequestUser } from '../auth/decorators';
+import {
+  istDayOfWeek,
+  istServiceDate,
+  istTimeHHMM,
+} from '../common/service-date';
 
 @Injectable()
 export class OrdersService {
@@ -58,13 +63,9 @@ export class OrdersService {
    * in one transaction. After placement, low-stock and sold-out alerts are sent.
    */
   private serviceDate(): Date {
-    // Use UTC-midnight of the *local* calendar day so this matches how the
-    // apps write dates: they send a "YYYY-MM-DD" string that Prisma parses to
-    // UTC-midnight. Using local midnight here (new Date(y,m,d)) would resolve
-    // to the previous UTC day in positive-offset zones like IST, causing
-    // "not cooking today" / plate-lookup mismatches after local midnight.
-    const now = new Date();
-    return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    // "Today" in IST as UTC-midnight — the menu day rolls over at IST midnight.
+    // Centralized so orders, discovery, and the daily-menu screen agree.
+    return istServiceDate();
   }
 
   async create(customerId: string, dto: CreateOrderDto) {
@@ -94,7 +95,7 @@ export class OrdersService {
       });
     }
 
-    const dayOfWeek = new Date().getDay(); // 0=Sun .. 6=Sat
+    const dayOfWeek = istDayOfWeek(); // 0=Sun .. 6=Sat, in IST
     const hours = await this.prisma.kitchenHours.findUnique({
       where: {
         kitchenId_dayOfWeek: {
@@ -109,9 +110,7 @@ export class OrdersService {
         dormantReason: 'outside_hours',
       });
     }
-    const now = new Date();
-    const currentTime =
-      `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const currentTime = istTimeHHMM(); // IST wall-clock "HH:MM"
     if (currentTime < hours.openTime || currentTime >= hours.closeTime) {
       throw new BadRequestException({
         message: 'Kitchen is outside operating hours.',
@@ -406,7 +405,9 @@ export class OrdersService {
   /** UTC-midnight of the local day a timestamp falls on — matches how plates
    *  were reserved at placement (see serviceDate()). */
   private serviceDateOf(ts: Date): Date {
-    return new Date(Date.UTC(ts.getFullYear(), ts.getMonth(), ts.getDate()));
+    // The IST service day the order was placed on — plates were reserved
+    // against that day's availability row, so restore against the same one.
+    return istServiceDate(ts);
   }
 
   /**
