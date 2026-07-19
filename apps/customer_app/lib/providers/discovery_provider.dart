@@ -3,16 +3,27 @@ import 'package:shared/shared.dart';
 
 import '../models/discovery_result.dart';
 import '../models/menu.dart';
+import 'addresses_provider.dart';
 import 'api_provider.dart';
 import 'location_provider.dart';
 
-/// Radius-based discovery near the device's location. Returns the
+/// The point discovery searches around: the active saved location when the
+/// customer has one, else the device GPS (with a Gachibowli fallback). Switching
+/// the active address recomputes this, which re-runs [discoveryProvider].
+final discoveryCenterProvider =
+    FutureProvider.autoDispose<({double lat, double lng})>((ref) async {
+  final active = ref.watch(activeAddressProvider);
+  if (active != null) return (lat: active.lat, lng: active.lng);
+  return ref.watch(discoveryLocationProvider.future);
+});
+
+/// Radius-based discovery near the active location. Returns the
 /// `{ state, kitchens }` envelope so the screen can render the three states
 /// (serviceable / dormant_only / none_in_radius).
 final discoveryProvider =
     FutureProvider.autoDispose<DiscoveryResult>((ref) async {
   final api = ref.watch(apiClientProvider);
-  final loc = await ref.watch(discoveryLocationProvider.future);
+  final loc = await ref.watch(discoveryCenterProvider.future);
 
   final data = await api.get('/kitchens', queryParams: {
     'lat': loc.lat.toString(),

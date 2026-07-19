@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
 import '../models/discovery_result.dart';
+import '../providers/addresses_provider.dart';
 import '../providers/api_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/discovery_provider.dart';
 import '../providers/location_provider.dart';
 import '../widgets/kitchen_card.dart';
+import 'address_management_screen.dart';
 import 'kitchen_detail_screen.dart';
+import 'profile_screen.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
@@ -45,7 +49,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     final async = ref.watch(discoveryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Kitchens near you')),
+      appBar: AppBar(
+        titleSpacing: 8,
+        title: const _ActiveAddressButton(),
+        actions: const [_ProfileAvatarButton(), SizedBox(width: 8)],
+      ),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(discoveryLocationProvider);
@@ -106,6 +114,87 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Top-left header entry: the active saved location's label with a pin +
+/// chevron, tappable to open Saved locations. Shows "Set location" when none.
+class _ActiveAddressButton extends ConsumerWidget {
+  const _ActiveAddressButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(activeAddressProvider);
+    final label = active?.label ?? 'Set location';
+    final theme = Theme.of(context);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const AddressManagementScreen()),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Searching near',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: theme.textTheme.bodySmall?.color)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Top-right header entry: a compact avatar that opens the profile section.
+class _ProfileAvatarButton extends ConsumerWidget {
+  const _ProfileAvatarButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = ref.watch(customerProfileProvider).valueOrNull?.name;
+    final initial =
+        (name != null && name.isNotEmpty) ? name[0].toUpperCase() : '?';
+    final theme = Theme.of(context);
+
+    return IconButton(
+      tooltip: 'Profile',
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      ),
+      icon: CircleAvatar(
+        radius: 16,
+        backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
+        child: Text(
+          initial,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
         ),
       ),
     );

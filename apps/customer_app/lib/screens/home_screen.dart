@@ -6,7 +6,6 @@ import '../services/push_service.dart';
 import 'discovery_screen.dart';
 import 'orders_screen.dart';
 import 'favorites_screen.dart';
-import 'profile_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -29,11 +28,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Profile is reached from the home header avatar (top-right), not the bottom
+    // nav — see DiscoveryScreen's header.
     const pages = [
       DiscoveryScreen(),
       OrdersScreen(),
       FavoritesScreen(),
-      ProfileScreen(),
     ];
 
     return Scaffold(
@@ -47,8 +47,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: Icon(Icons.receipt_long_outlined), label: 'Orders'),
           NavigationDestination(
               icon: Icon(Icons.favorite_border), label: 'Favorites'),
-          NavigationDestination(
-              icon: Icon(Icons.person_outline), label: 'Profile'),
         ],
       ),
     );
