@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/earnings_provider.dart';
 import '../providers/kitchen_provider.dart';
 import '../services/push_service.dart';
+import 'earnings_screen.dart';
 import 'orders_screen.dart';
 import 'menu_screen.dart';
 import 'profile_screen.dart';
@@ -71,6 +73,9 @@ class _DashboardPage extends ConsumerWidget {
     final profile = ref.watch(kitchenProfileProvider);
     final dailyStatus = ref.watch(dailyStatusProvider);
     final ordersAsync = ref.watch(ordersProvider(null));
+    // Today's earnings come from the dedicated earnings API (netEarningsPaise:
+    // gross − daily fees). The local orders list is kept for the order-count widget.
+    final todayEarningsAsync = ref.watch(earningsProvider('today'));
 
     final kitchenName = profile.valueOrNull?.kitchenName ?? 'My Kitchen';
     final isCooking = dailyStatus.valueOrNull?['isCooking'] == true;
@@ -84,17 +89,8 @@ class _DashboardPage extends ConsumerWidget {
       return l.year == now.year && l.month == now.month && l.day == now.day;
     }
 
-    // "Today's Orders" = orders placed today (any status) — matches the label
-    // and stays consistent with the earnings filter below.
+    // "Today's Orders" = orders placed today (any status).
     final orderCount = orders.where((o) => isToday(o.placedAt)).length;
-
-    // Earnings = food total of orders completed today (platform fee is not the
-    // kitchen's; it goes to Homely).
-    final earningsPaise = orders
-        .where((o) =>
-            o.status == OrderStatus.completed &&
-            isToday(o.completedAt ?? o.placedAt))
-        .fold<int>(0, (sum, o) => sum + o.foodTotalPaise);
 
     return Scaffold(
       appBar: AppBar(
@@ -105,6 +101,7 @@ class _DashboardPage extends ConsumerWidget {
           ref.invalidate(dailyStatusProvider);
           ref.invalidate(ordersProvider(null));
           ref.invalidate(kitchenProfileProvider);
+          ref.invalidate(earningsProvider('today'));
         },
         child: ListView(
           padding: const EdgeInsets.all(24),
@@ -170,30 +167,57 @@ class _DashboardPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            // Today's earnings
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    const Icon(Icons.account_balance_wallet,
-                        size: 32, color: Colors.green),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Today's Earnings",
-                              style: Theme.of(context).textTheme.titleMedium),
-                          Text('₹${(earningsPaise / 100).toStringAsFixed(0)}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                        ],
+            // Today's earnings widget — backed by earningsProvider('today').
+            // Tap navigates to the full Earnings & Payouts screen.
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const EarningsScreen(),
+                ),
+              ),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.account_balance_wallet,
+                          size: 32, color: Colors.green),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Today's Earnings",
+                                style: Theme.of(context).textTheme.titleMedium),
+                            todayEarningsAsync.when(
+                              loading: () => const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              error: (_, _) => Text(
+                                '—',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              data: (s) => Text(
+                                '₹${(s.netEarningsPaise / 100).toStringAsFixed(0)}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const Icon(Icons.chevron_right, color: Colors.grey),
+                    ],
+                  ),
                 ),
               ),
             ),
