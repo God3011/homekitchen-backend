@@ -175,13 +175,6 @@ class _OrderDateChips extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(children: [
-        // "All dates" chip
-        ChoiceChip(
-          label: const Text('All dates'),
-          selected: isAll,
-          onSelected: (_) => onSelect(null),
-        ),
-        const SizedBox(width: 8),
         ChoiceChip(
           label: const Text('Today'),
           selected: isToday,
@@ -192,6 +185,13 @@ class _OrderDateChips extends StatelessWidget {
           label: const Text('Yesterday'),
           selected: isYesterday,
           onSelected: (_) => onSelect(yesterday),
+        ),
+        const SizedBox(width: 8),
+        // "All dates" chip
+        ChoiceChip(
+          label: const Text('All dates'),
+          selected: isAll,
+          onSelected: (_) => onSelect(null),
         ),
         const SizedBox(width: 8),
         // Calendar chip — shows the picked date when a specific other day
