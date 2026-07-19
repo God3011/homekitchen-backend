@@ -214,7 +214,7 @@ class _MenuBody extends ConsumerWidget {
                 crossAxisCount: 2,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 0.72,
+                childAspectRatio: 0.6,
               ),
               itemBuilder: (context, i) => _DishCard(
                 dish: section.dishes[i],
