@@ -14,7 +14,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
-import { KitchensService, SignupFiles } from './kitchens.service';
+import {
+  EarningsPeriod,
+  KitchensService,
+  SignupFiles,
+} from './kitchens.service';
 import { UploadFile } from '../storage/storage.service';
 import { CreateKitchenDto } from './dto/create-kitchen.dto';
 import { UpdateKitchenDto } from './dto/update-kitchen.dto';
@@ -138,6 +142,39 @@ export class KitchensController {
     @Query('date') date: string,
   ) {
     return this.kitchens.getDailyStatus(user.userId, date);
+  }
+
+  // --- Earnings & payouts (read-only; scheduled payouts, no self-serve withdraw) ---
+  @Roles('kitchen')
+  @Get('me/earnings')
+  getEarnings(
+    @CurrentUser() user: RequestUser,
+    @Query('period') period?: string,
+  ) {
+    const allowed: EarningsPeriod[] = ['today', 'week', 'month', 'all'];
+    const p = (period ?? 'today') as EarningsPeriod;
+    if (!allowed.includes(p)) {
+      throw new BadRequestException(
+        "period must be one of: today, week, month, all.",
+      );
+    }
+    return this.kitchens.getEarnings(user.userId, p);
+  }
+
+  @Roles('kitchen')
+  @Get('me/payouts')
+  listPayouts(
+    @CurrentUser() user: RequestUser,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const pageNum = page != null ? Number(page) : 1;
+    const sizeNum = pageSize != null ? Number(pageSize) : 20;
+    return this.kitchens.listPayouts(
+      user.userId,
+      Number.isFinite(pageNum) ? pageNum : 1,
+      Number.isFinite(sizeNum) ? sizeNum : 20,
+    );
   }
 
   // --- Admin ---

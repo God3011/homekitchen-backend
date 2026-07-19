@@ -8,5 +8,6 @@ import { KitchensService } from './kitchens.service';
   imports: [AuthModule, ZonesModule],
   controllers: [KitchensController],
   providers: [KitchensService],
+  exports: [KitchensService],
 })
 export class KitchensModule {}

@@ -47,6 +47,33 @@ export function istTimeHHMM(now: Date = new Date()): string {
   return `${h}:${m}`;
 }
 
+/**
+ * The real UTC instant of IST midnight `daysAgo` days back — for filtering
+ * timestamp columns (e.g. `Order.completedAt`) by "since the start of an IST
+ * day". Unlike istServiceDate (which floors to UTC-midnight for @db.Date
+ * matching), this returns the true instant (IST midnight = 18:30 UTC prior day).
+ */
+export function istDayStartUtc(daysAgo = 0, now: Date = new Date()): Date {
+  const ist = istParts(now);
+  const istMidnightAsUtcFields = Date.UTC(
+    ist.getUTCFullYear(),
+    ist.getUTCMonth(),
+    ist.getUTCDate() - daysAgo,
+  );
+  return new Date(istMidnightAsUtcFields - IST_OFFSET_MIN * 60_000);
+}
+
+/**
+ * The UTC-midnight `@db.Date` value for the IST day `daysAgo` days back — for
+ * filtering DATE columns (e.g. `KitchenDailyStatus.serviceDate`) by period.
+ */
+export function istServiceDateDaysAgo(
+  daysAgo = 0,
+  now: Date = new Date(),
+): Date {
+  return new Date(istServiceDate(now).getTime() - daysAgo * 86_400_000);
+}
+
 /** Format a UTC-midnight service Date back to "YYYY-MM-DD". */
 export function formatServiceDate(d: Date): string {
   const y = d.getUTCFullYear();

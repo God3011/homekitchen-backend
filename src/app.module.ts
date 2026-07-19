@@ -16,6 +16,7 @@ import { StorageModule } from './storage/storage.module';
 import { ZonesModule } from './zones/zones.module';
 import { GeocodeModule } from './geocode/geocode.module';
 import { ServiceInterestModule } from './service-interest/service-interest.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ServiceInterestModule } from './service-interest/service-interest.modul
     GeocodeModule,
     FavoritesModule,
     ServiceInterestModule,
+    AdminModule,
   ],
   controllers: [HealthController],
 })

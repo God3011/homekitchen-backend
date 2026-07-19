@@ -25,10 +25,14 @@ import { ZonesService } from '../zones/zones.service';
 import { RequestUser } from '../auth/decorators';
 import {
   istDayOfWeek,
+  istDayStartUtc,
   istServiceDate,
+  istServiceDateDaysAgo,
   istTimeHHMM,
   parseServiceDate,
 } from '../common/service-date';
+
+export type EarningsPeriod = 'today' | 'week' | 'month' | 'all';
 
 /** Photo files submitted with the multipart signup request. */
 export interface SignupFiles {
@@ -262,6 +266,124 @@ export class KitchensService {
         payment: true,
       },
     });
+  }
+
+  // ── Earnings & payouts ───────────────────────────────────────────────
+  //
+  // "Earned" means an order reached status `completed` (handover confirmed) —
+  // NOT merely accepted or marked ready. Gross is the sum of foodTotalPaise
+  // (the platform's ₹5 fee is Homely's, not the kitchen's). The seller's daily
+  // ₹50 fee is deducted per cooking day that was actually charged. All money in
+  // integer paise. v1 payouts are SCHEDULED (manual UPI) — there is no
+  // self-serve withdraw; pending balance is lifetime net minus payouts recorded.
+
+  /** Inclusive lookback window (days) for a period; null = all-time. */
+  private periodDaysAgo(period: EarningsPeriod): number | null {
+    switch (period) {
+      case 'today':
+        return 0;
+      case 'week':
+        return 6; // today + previous 6 = 7 days
+      case 'month':
+        return 29; // today + previous 29 = 30 days
+      case 'all':
+        return null;
+    }
+  }
+
+  /** Net earnings (completed gross − charged daily fees) across ALL time. */
+  private async lifetimeNetPaise(kitchenId: string): Promise<number> {
+    const config = await this.prisma.platformConfig.findUniqueOrThrow({
+      where: { id: 1 },
+    });
+    const [grossAgg, feeDays] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: { kitchenId, status: OrderStatus.completed },
+        _sum: { foodTotalPaise: true },
+      }),
+      this.prisma.kitchenDailyStatus.count({
+        where: { kitchenId, feeCharged: true },
+      }),
+    ]);
+    const gross = grossAgg._sum.foodTotalPaise ?? 0;
+    return gross - feeDays * config.sellerDailyFeePaise;
+  }
+
+  /** Lifetime net minus everything already paid out. Used by admin payout
+   *  validation and surfaced on the earnings screen. */
+  async pendingBalancePaise(kitchenId: string): Promise<number> {
+    const [net, paidAgg] = await Promise.all([
+      this.lifetimeNetPaise(kitchenId),
+      this.prisma.payout.aggregate({
+        where: { kitchenId },
+        _sum: { amountPaise: true },
+      }),
+    ]);
+    return net - (paidAgg._sum.amountPaise ?? 0);
+  }
+
+  async getEarnings(kitchenId: string, period: EarningsPeriod) {
+    const config = await this.prisma.platformConfig.findUniqueOrThrow({
+      where: { id: 1 },
+    });
+    const daysAgo = this.periodDaysAgo(period);
+
+    // Completed-order gross + count within the period (IST day boundaries).
+    const orderWhere =
+      daysAgo === null
+        ? { kitchenId, status: OrderStatus.completed }
+        : {
+            kitchenId,
+            status: OrderStatus.completed,
+            completedAt: { gte: istDayStartUtc(daysAgo) },
+          };
+    const grossAgg = await this.prisma.order.aggregate({
+      where: orderWhere,
+      _sum: { foodTotalPaise: true },
+      _count: true,
+    });
+    const grossPaise = grossAgg._sum.foodTotalPaise ?? 0;
+    const orderCount = grossAgg._count;
+
+    // Daily ₹50 fees actually charged within the period.
+    const feeWhere =
+      daysAgo === null
+        ? { kitchenId, feeCharged: true }
+        : {
+            kitchenId,
+            feeCharged: true,
+            serviceDate: { gte: istServiceDateDaysAgo(daysAgo) },
+          };
+    const feeDays = await this.prisma.kitchenDailyStatus.count({
+      where: feeWhere,
+    });
+    const feesPaise = feeDays * config.sellerDailyFeePaise;
+
+    return {
+      period,
+      grossPaise,
+      orderCount,
+      feeDays,
+      feesPaise,
+      netEarningsPaise: grossPaise - feesPaise,
+      // Pending balance is lifetime, independent of the selected period.
+      pendingBalancePaise: await this.pendingBalancePaise(kitchenId),
+    };
+  }
+
+  async listPayouts(kitchenId: string, page = 1, pageSize = 20) {
+    const take = Math.min(Math.max(pageSize, 1), 100);
+    const skip = (Math.max(page, 1) - 1) * take;
+    const [items, total] = await Promise.all([
+      this.prisma.payout.findMany({
+        where: { kitchenId },
+        orderBy: [{ payoutDate: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take,
+      }),
+      this.prisma.payout.count({ where: { kitchenId } }),
+    ]);
+    return { items, total, page: Math.max(page, 1), pageSize: take };
   }
 
   // ── Customer-facing radius discovery ─────────────────────────────────

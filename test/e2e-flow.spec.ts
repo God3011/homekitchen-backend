@@ -1671,4 +1671,140 @@ describe('E2E: Full order lifecycle', () => {
       .set('Authorization', 'Bearer kitchen-test-token')
       .expect(400);
   });
+
+  // =====================================================================
+  // Step 20 — Earnings & payouts
+  //
+  // "Earned" = order status completed ONLY. Gross = Σ foodTotalPaise of
+  // completed orders; net = gross − charged daily fees; pending balance =
+  // lifetime net − payouts. v1 payouts are scheduled/manual (admin-logged).
+  // The main flow completed exactly one ₹150 order (test 6d); no daily fee was
+  // ever charged (feeCharged stays false), so net == gross here.
+  // =====================================================================
+  it('20a. Completed order shows up as earnings + pending balance', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(res.body.orderCount).toBeGreaterThanOrEqual(1);
+    expect(res.body.grossPaise).toBeGreaterThan(0);
+    // No daily fee charged in the flow → net == gross, pending == net.
+    expect(res.body.feesPaise).toBe(0);
+    expect(res.body.netEarningsPaise).toBe(res.body.grossPaise);
+    expect(res.body.pendingBalancePaise).toBe(res.body.netEarningsPaise);
+  });
+
+  it('20b. A non-completed (rejected) order does NOT change the balance', async () => {
+    // Ensure the kitchen is serviceable + has plates, then place a fresh order.
+    await request(app.getHttpServer())
+      .put(`/api/menu/items/${menuItemId}/availability`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
+      .expect(200);
+
+    const before = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    const place = await request(app.getHttpServer())
+      .post('/api/orders')
+      .set('Authorization', 'Bearer customer-test-token')
+      .send({ kitchenId, fulfillment: 'pickup', items: [{ menuItemId, quantity: 1 }] })
+      .expect(201);
+
+    // Seller rejects it → never reaches `completed`.
+    await request(app.getHttpServer())
+      .patch(`/api/orders/${place.body.id}/reject`)
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ reason: 'testing earnings' })
+      .expect(200);
+
+    const after = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    expect(after.body.grossPaise).toBe(before.body.grossPaise);
+    expect(after.body.orderCount).toBe(before.body.orderCount);
+    expect(after.body.pendingBalancePaise).toBe(before.body.pendingBalancePaise);
+  });
+
+  it('20c. Admin payout decreases the pending balance + lands in history', async () => {
+    const before = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    const pending = before.body.pendingBalancePaise as number;
+    const payAmount = Math.floor(pending / 2);
+    expect(payAmount).toBeGreaterThan(0);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/payouts')
+      .set('Authorization', 'Bearer admin-test-token')
+      .send({
+        kitchenId,
+        amountPaise: payAmount,
+        payoutDate: todayDateStr(),
+        note: 'Weekly UPI transfer',
+      })
+      .expect(201);
+
+    const after = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    expect(after.body.pendingBalancePaise).toBe(pending - payAmount);
+
+    const history = await request(app.getHttpServer())
+      .get('/api/kitchens/me/payouts')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+    expect(history.body.total).toBe(1);
+    expect(history.body.items[0].amountPaise).toBe(payAmount);
+    expect(history.body.items[0].note).toBe('Weekly UPI transfer');
+  });
+
+  it('20d. A payout over the pending balance is rejected (400)', async () => {
+    const cur = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/payouts')
+      .set('Authorization', 'Bearer admin-test-token')
+      .send({
+        kitchenId,
+        amountPaise: cur.body.pendingBalancePaise + 1,
+        payoutDate: todayDateStr(),
+      })
+      .expect(400);
+  });
+
+  it('20e. A kitchen only sees its OWN earnings; customers are forbidden', async () => {
+    // kitchen2 (signed up in 6g) has no completed orders → zero everything.
+    const other = await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer kitchen2-test-token')
+      .expect(200);
+    expect(other.body.orderCount).toBe(0);
+    expect(other.body.grossPaise).toBe(0);
+    expect(other.body.pendingBalancePaise).toBe(0);
+
+    // A customer cannot read the kitchen earnings endpoint at all.
+    await request(app.getHttpServer())
+      .get('/api/kitchens/me/earnings?period=all')
+      .set('Authorization', 'Bearer customer-test-token')
+      .expect(403);
+  });
+
+  it('20f. Only admins can record payouts', async () => {
+    await request(app.getHttpServer())
+      .post('/api/admin/payouts')
+      .set('Authorization', 'Bearer kitchen-test-token')
+      .send({ kitchenId, amountPaise: 100, payoutDate: todayDateStr() })
+      .expect(403);
+  });
 });
