@@ -431,31 +431,17 @@ class _OnMenuCard extends ConsumerWidget {
                 ),
               ),
             ]),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(children: [
-                  Switch(
-                    value: dish.isAvailable,
-                    onChanged: (v) =>
-                        notifier.setAvailable(dish.menuItemId, v),
-                  ),
-                  Text(dish.isAvailable ? 'Selling' : 'Sold out',
-                      style: TextStyle(
-                          color: dish.isAvailable
-                              ? null
-                              : Theme.of(context).colorScheme.error)),
-                ]),
-                TextButton.icon(
-                  onPressed: () =>
-                      notifier.removeFromToday(dish.menuItemId),
-                  icon: const Icon(Icons.remove_circle_outline, size: 18),
-                  label: const Text('Remove'),
-                  style: TextButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.error),
-                ),
-              ],
-            ),
+            Row(children: [
+              Switch(
+                value: dish.isAvailable,
+                onChanged: (v) => notifier.setAvailable(dish.menuItemId, v),
+              ),
+              Text(dish.isAvailable ? 'Selling' : 'Sold out',
+                  style: TextStyle(
+                      color: dish.isAvailable
+                          ? null
+                          : Theme.of(context).colorScheme.error)),
+            ]),
           ],
         ),
       ),
