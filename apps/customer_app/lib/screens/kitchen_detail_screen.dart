@@ -206,23 +206,30 @@ class _MenuBody extends ConsumerWidget {
                         ?.copyWith(fontWeight: FontWeight.bold)),
               ),
             // 2-column grid of square dish cards
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: section.dishes.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 0.6,
-              ),
-              itemBuilder: (context, i) => _DishCard(
-                dish: section.dishes[i],
-                kitchenId: kitchenId,
-                kitchenName: kitchenName,
-                orderingEnabled: serviceable,
-              ),
-            ),
+            Builder(builder: (context) {
+              final sorted = [...section.dishes]
+                ..sort((a, b) {
+                  if (a.isAvailable == b.isAvailable) return 0;
+                  return a.isAvailable ? -1 : 1;
+                });
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: sorted.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 14,
+                  crossAxisSpacing: 14,
+                  childAspectRatio: 0.62,
+                ),
+                itemBuilder: (context, i) => _DishCard(
+                  dish: sorted[i],
+                  kitchenId: kitchenId,
+                  kitchenName: kitchenName,
+                  orderingEnabled: serviceable,
+                ),
+              );
+            }),
             const SizedBox(height: 16),
           ],
       ],
