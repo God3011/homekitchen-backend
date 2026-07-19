@@ -30,15 +30,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      const _DashboardPage(),
-      const MenuScreen(),
-      const OrdersScreen(),
-      const ProfileScreen(),
+    const pages = [
+      _DashboardPage(),
+      MenuScreen(),
+      OrdersScreen(),
+      ProfileScreen(),
     ];
 
     return Scaffold(
-      body: pages[_currentIndex],
+      // IndexedStack keeps every tab mounted, so switching tabs doesn't dispose
+      // and refetch each page's providers (e.g. dailyStatusProvider) — the
+      // "Cooking Today?" toggle would otherwise flash OFF while it re-loaded.
+      // It also preserves in-tab state like the Menu screen's staged edits.
+      body: IndexedStack(index: _currentIndex, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
