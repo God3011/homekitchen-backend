@@ -465,10 +465,26 @@ export class KitchensService {
             platesRemaining: { gt: 0 },
             menuItem: { kitchenId: { in: inRadiusIds }, isActive: true },
           },
-          select: { menuItem: { select: { kitchenId: true } } },
+          select: { menuItem: { select: { kitchenId: true, isVeg: true, name: true } } },
         })
       : [];
     const platesSet = new Set(withPlates.map((a) => a.menuItem.kitchenId));
+    // Kitchens with ≥1 orderable VEG plate today — powers the "Veg only" filter.
+    const vegSet = new Set(
+      withPlates
+        .filter((a) => a.menuItem.isVeg)
+        .map((a) => a.menuItem.kitchenId),
+    );
+    // Today's dish names per kitchen — powers client-side dish search.
+    const dishNamesMap = new Map<string, string[]>();
+    for (const a of withPlates) {
+      const arr = dishNamesMap.get(a.menuItem.kitchenId);
+      if (arr) {
+        if (!arr.includes(a.menuItem.name)) arr.push(a.menuItem.name);
+      } else {
+        dishNamesMap.set(a.menuItem.kitchenId, [a.menuItem.name]);
+      }
+    }
 
     const cards = inRadius.map(({ k, distanceM }) => {
       const { ratings, hours, dailyStatus, ...card } = k;
@@ -498,6 +514,8 @@ export class KitchensService {
         distanceM,
         serviceable,
         dormantReason,
+        hasVeg: vegSet.has(k.id),
+        todayDishNames: dishNamesMap.get(k.id) ?? [],
       };
     });
 

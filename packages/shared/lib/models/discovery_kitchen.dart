@@ -20,6 +20,10 @@ class DiscoveryKitchen {
   final bool serviceable;
   // 'not_cooking_today' | 'outside_hours' | 'sold_out' — set only when dormant.
   final String? dormantReason;
+  // True when the kitchen has ≥1 orderable veg plate today (powers "Veg only").
+  final bool hasVeg;
+  // Today's available dish names — powers client-side dish search.
+  final List<String> todayDishNames;
 
   const DiscoveryKitchen({
     required this.id,
@@ -36,6 +40,8 @@ class DiscoveryKitchen {
     this.distanceM,
     this.serviceable = false,
     this.dormantReason,
+    this.hasVeg = false,
+    this.todayDishNames = const [],
   });
 
   factory DiscoveryKitchen.fromJson(Map<String, dynamic> json) {
@@ -54,6 +60,10 @@ class DiscoveryKitchen {
       distanceM: json['distanceM'] as int?,
       serviceable: json['serviceable'] as bool? ?? false,
       dormantReason: json['dormantReason'] as String?,
+      hasVeg: json['hasVeg'] as bool? ?? false,
+      todayDishNames: ((json['todayDishNames'] as List<dynamic>?) ?? const [])
+          .map((e) => e as String)
+          .toList(),
     );
   }
 
