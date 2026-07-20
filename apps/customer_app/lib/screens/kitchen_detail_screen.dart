@@ -288,7 +288,7 @@ class _DishCard extends ConsumerWidget {
           // Info area
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -311,11 +311,18 @@ class _DishCard extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  const Spacer(),
-                  // Price (right) + action (left) on same line
+                  const SizedBox(height: 6),
+                  // Price (left) + action (right) on the same line
                   Row(
                     children: [
-                      // ADD / stepper / sold out — left side
+                      // Price — left side
+                      Text(formatPaise(dish.pricePaise),
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: HomelyColors.goldDeep)),
+                      const Spacer(),
+                      // ADD / stepper / sold out — right side
                       if (soldOut)
                         const Text('Sold out',
                             style: TextStyle(
@@ -350,13 +357,6 @@ class _DishCard extends ConsumerWidget {
                                   .increment(dish.id)
                               : null,
                         ),
-                      const Spacer(),
-                      // Price — right side
-                      Text(formatPaise(dish.pricePaise),
-                          style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: HomelyColors.goldDeep)),
                     ],
                   ),
                 ],

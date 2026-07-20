@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
+
+import '../providers/favorites_provider.dart';
 
 /// A tappable, photo-forward discovery card: image header with a favourite tap
 /// and distance overlay, then name, cook, sage rating pill, signature dish, and
@@ -56,16 +59,7 @@ class KitchenCard extends StatelessWidget {
                     Positioned(
                       top: 10,
                       right: 10,
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.favorite_border,
-                            size: 17, color: HomelyColors.nonVeg),
-                      ),
+                      child: _FavoriteHeart(kitchenId: kitchen.id),
                     ),
                     if (kitchen.distanceLabel != null)
                       Positioned(
@@ -258,6 +252,48 @@ class _Badge extends StatelessWidget {
               style: TextStyle(
                   fontSize: 12, fontWeight: FontWeight.w800, color: fg)),
         ],
+      ),
+    );
+  }
+}
+
+/// Tappable favourite heart on the card photo. Watches the favourites so it
+/// turns red the moment the kitchen is saved, and toggles on tap.
+class _FavoriteHeart extends ConsumerWidget {
+  const _FavoriteHeart({required this.kitchenId});
+  final String kitchenId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFav =
+        ref.watch(favoriteIdsProvider).valueOrNull?.contains(kitchenId) ??
+            false;
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () async {
+          try {
+            await toggleFavorite(ref, kitchenId, isFavorite: isFav);
+          } catch (_) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Could not update favorite.')));
+            }
+          }
+        },
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Center(
+            child: Icon(
+              isFav ? Icons.favorite : Icons.favorite_border,
+              size: 18,
+              color: isFav ? Colors.red : HomelyColors.inkSoft,
+            ),
+          ),
+        ),
       ),
     );
   }

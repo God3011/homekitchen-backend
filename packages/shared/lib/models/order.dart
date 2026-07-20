@@ -3,18 +3,23 @@ import 'kitchen.dart';
 import 'rating.dart';
 
 /// A single preference on an order item (snapshot from menu).
+///
+/// The backend row has a composite primary key `(orderItemId, preference)` and
+/// therefore NO `id` field — so `id` here is nullable. Reading it as a non-null
+/// String was a latent bug that crashed parsing of any order carrying item
+/// preferences ("type 'Null' is not a subtype of type 'String'").
 class OrderItemPreference {
-  final String id;
+  final String? id;
   final String preference;
 
   const OrderItemPreference({
-    required this.id,
+    this.id,
     required this.preference,
   });
 
   factory OrderItemPreference.fromJson(Map<String, dynamic> json) {
     return OrderItemPreference(
-      id: json['id'] as String,
+      id: json['id'] as String?,
       preference: json['preference'] as String,
     );
   }

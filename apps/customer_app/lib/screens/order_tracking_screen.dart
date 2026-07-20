@@ -154,17 +154,25 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Could not load your order.'),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () =>
-                    ref.invalidate(orderProvider(widget.orderId)),
-                child: const Text('Retry'),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Could not load your order.'),
+                const SizedBox(height: 8),
+                Text('$e',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 12, color: HomelyColors.inkFaint)),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: () =>
+                      ref.invalidate(orderProvider(widget.orderId)),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

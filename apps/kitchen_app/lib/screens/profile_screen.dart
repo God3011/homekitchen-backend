@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
@@ -143,10 +144,40 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final verified = status == 'verified';
-    return Chip(
-      backgroundColor: verified ? Colors.green.shade100 : Colors.orange.shade100,
-      label: Text(status.replaceAll('_', ' ')),
+    final (Color bg, Color fg, IconData icon, String label) = switch (status) {
+      'verified' => (
+          HomelyColors.sageTint,
+          HomelyColors.sageDeep,
+          Icons.verified_rounded,
+          'Verified'
+        ),
+      'suspended' => (
+          HomelyColors.danger.withValues(alpha: 0.12),
+          HomelyColors.danger,
+          Icons.block_rounded,
+          'Suspended'
+        ),
+      _ => (
+          HomelyColors.goldTint,
+          HomelyColors.goldDeep,
+          Icons.hourglass_top_rounded,
+          'Pending review'
+        ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: fg),
+          const SizedBox(width: 5),
+          Text(label,
+              style: TextStyle(
+                  color: fg, fontWeight: FontWeight.w800, fontSize: 13)),
+        ],
+      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
 
 import '../providers/favorites_provider.dart';
 import '../widgets/kitchen_card.dart';
@@ -22,12 +23,14 @@ class FavoritesScreen extends ConsumerWidget {
               return ListView(
                 children: const [
                   SizedBox(height: 120),
-                  Icon(Icons.favorite_border, size: 64, color: Colors.grey),
+                  Icon(Icons.favorite_border,
+                      size: 64, color: HomelyColors.inkFaint),
                   SizedBox(height: 16),
                   Center(
                       child: Text(
                           'No favorites yet.\nTap the heart on a kitchen to save it.',
-                          textAlign: TextAlign.center)),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: HomelyColors.inkSoft))),
                 ],
               );
             }
@@ -37,7 +40,7 @@ class FavoritesScreen extends ConsumerWidget {
               itemBuilder: (_, i) {
                 final k = favorites[i];
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
                   child: KitchenCard(
                     kitchen: k,
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(

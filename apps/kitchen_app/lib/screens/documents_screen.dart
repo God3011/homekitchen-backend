@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared/shared.dart';
 
 import '../providers/kitchen_provider.dart';
 
@@ -108,7 +109,8 @@ class _DocumentsScreenState extends ConsumerState<DocumentsScreen> {
                     child: Text(label,
                         style: Theme.of(context).textTheme.titleMedium)),
                 if (count > 0)
-                  const Icon(Icons.check_circle, color: Colors.green),
+                  const Icon(Icons.check_circle,
+                      color: HomelyColors.sageDeep),
               ],
             ),
             const SizedBox(height: 4),

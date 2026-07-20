@@ -465,7 +465,7 @@ class _HandoverCodeDialogState extends State<_HandoverCodeDialog> {
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.headlineMedium,
         decoration: const InputDecoration(
-          hintText: '1234',
+          hintText: '_ _ _ _',
           counterText: '',
         ),
       ),

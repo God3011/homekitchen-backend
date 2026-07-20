@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
 
 import '../providers/kitchen_provider.dart';
 
@@ -151,7 +152,14 @@ class _OperatingHoursScreenState extends ConsumerState<OperatingHoursScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
           children: [
-            SizedBox(width: 78, child: Text(_dayNames[i])),
+            SizedBox(
+                width: 78,
+                child: Text(_dayNames[i],
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: d.enabled
+                            ? HomelyColors.ink
+                            : HomelyColors.inkFaint))),
             Switch(
               value: d.enabled,
               onChanged: (v) => setState(() => d.enabled = v),
@@ -172,7 +180,9 @@ class _OperatingHoursScreenState extends ConsumerState<OperatingHoursScreen> {
               ),
             ] else
               const Expanded(
-                  child: Text('Closed', textAlign: TextAlign.center)),
+                  child: Text('Closed',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: HomelyColors.inkFaint))),
           ],
         ),
       ),

@@ -24,18 +24,29 @@ class ProfileScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Center(
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.deepOrange.withValues(alpha: 0.15),
-                  child: Text(
-                    (customer.name?.isNotEmpty ?? false)
-                        ? customer.name![0].toUpperCase()
-                        : '?',
-                    style: const TextStyle(
-                        fontSize: 32, fontWeight: FontWeight.bold),
-                  ),
+                child: Column(
+                  children: [
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: HomelyColors.blueTint,
+                      child: Text(
+                        (customer.name?.isNotEmpty ?? false)
+                            ? customer.name![0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: HomelyColors.blueDeep),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(customer.name ?? 'Add your name',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    Text(customer.phone,
+                        style: const TextStyle(color: HomelyColors.inkFaint)),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),
@@ -44,10 +55,6 @@ class ProfileScreen extends ConsumerWidget {
                 title: Text(customer.name ?? 'Add your name'),
                 trailing: const Icon(Icons.edit, size: 18),
                 onTap: () => _editName(context, ref, customer),
-              ),
-              ListTile(
-                leading: const Icon(Icons.phone_outlined),
-                title: Text(customer.phone),
               ),
               ListTile(
                 leading: const Icon(Icons.place_outlined),
@@ -60,6 +67,10 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const Divider(height: 32),
               OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: HomelyColors.danger,
+                  side: const BorderSide(color: HomelyColors.danger),
+                ),
                 onPressed: () async {
                   // Unregister the FCM token while still authenticated.
                   await unregisterDeviceToken(ref.read(apiClientProvider));
