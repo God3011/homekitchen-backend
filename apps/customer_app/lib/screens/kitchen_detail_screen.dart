@@ -220,7 +220,7 @@ class _MenuBody extends ConsumerWidget {
                   crossAxisCount: 2,
                   mainAxisSpacing: 14,
                   crossAxisSpacing: 14,
-                  childAspectRatio: 0.62,
+                  childAspectRatio: 0.75,
                 ),
                 itemBuilder: (context, i) => _DishCard(
                   dish: sorted[i],
@@ -273,9 +273,9 @@ class _DishCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Square image
+          // Image
           AspectRatio(
-            aspectRatio: 1,
+            aspectRatio: 4 / 3,
             child: dish.photoUrl != null && dish.photoUrl!.isNotEmpty
                 ? Image.network(
                     dish.photoUrl!,
@@ -311,53 +311,54 @@ class _DishCard extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  // Price
-                  Text(formatPaise(dish.pricePaise),
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: HomelyColors.goldDeep)),
                   const Spacer(),
-                  // Sold out / low stock / ADD
-                  if (soldOut)
-                    const Center(
-                      child: Text('Sold out',
-                          style: TextStyle(
-                              color: HomelyColors.danger,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600)),
-                    )
-                  else if (!orderingEnabled)
-                    const SizedBox.shrink()
-                  else if (qty == 0)
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: HomelyColors.goldDeep,
-                          backgroundColor: HomelyColors.goldTint,
-                          side: const BorderSide(
-                              color: HomelyColors.gold, width: 1.4),
-                          minimumSize: const Size(0, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          textStyle: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w700),
+                  // Price (right) + action (left) on same line
+                  Row(
+                    children: [
+                      // ADD / stepper / sold out — left side
+                      if (soldOut)
+                        const Text('Sold out',
+                            style: TextStyle(
+                                color: HomelyColors.danger,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600))
+                      else if (!orderingEnabled)
+                        const SizedBox.shrink()
+                      else if (qty == 0)
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: HomelyColors.goldDeep,
+                            backgroundColor: HomelyColors.goldTint,
+                            side: const BorderSide(
+                                color: HomelyColors.gold, width: 1.4),
+                            minimumSize: const Size(0, 28),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            textStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                          onPressed: () => _addToCart(context, ref),
+                          child: const Text('ADD'),
+                        )
+                      else
+                        _MiniStepper(
+                          quantity: qty,
+                          onRemove: () =>
+                              ref.read(cartProvider.notifier).decrement(dish.id),
+                          onAdd: qty < dish.platesRemaining
+                              ? () => ref
+                                  .read(cartProvider.notifier)
+                                  .increment(dish.id)
+                              : null,
                         ),
-                        onPressed: () => _addToCart(context, ref),
-                        child: const Text('ADD'),
-                      ),
-                    )
-                  else
-                    _MiniStepper(
-                      quantity: qty,
-                      onRemove: () =>
-                          ref.read(cartProvider.notifier).decrement(dish.id),
-                      onAdd: qty < dish.platesRemaining
-                          ? () =>
-                              ref.read(cartProvider.notifier).increment(dish.id)
-                          : null,
-                    ),
+                      const Spacer(),
+                      // Price — right side
+                      Text(formatPaise(dish.pricePaise),
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: HomelyColors.goldDeep)),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -487,33 +488,37 @@ class _MiniStepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Content-sized (never infinite width) so it sits on the left of the
+    // price/action row with the price on the right.
     return Container(
-      width: double.infinity,
       decoration: BoxDecoration(
         color: HomelyColors.gold,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.min,
         children: [
           InkWell(
             onTap: onRemove,
             child: const Padding(
-              padding: EdgeInsets.all(6),
-              child: Icon(Icons.remove, size: 16, color: HomelyColors.ink),
+              padding: EdgeInsets.all(5),
+              child: Icon(Icons.remove, size: 15, color: HomelyColors.ink),
             ),
           ),
-          Text('$quantity',
-              style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                  color: HomelyColors.ink)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text('$quantity',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: HomelyColors.ink)),
+          ),
           InkWell(
             onTap: onAdd,
             child: Padding(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(5),
               child: Icon(Icons.add,
-                  size: 16,
+                  size: 15,
                   color:
                       onAdd != null ? HomelyColors.ink : HomelyColors.inkFaint),
             ),

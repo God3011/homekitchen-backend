@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared/shared.dart';
 
 import '../providers/daily_menu_provider.dart';
 import '../providers/kitchen_provider.dart';
@@ -293,6 +294,7 @@ class _EditableView extends ConsumerWidget {
           name: created['name'] as String,
           pricePaise: created['pricePaise'] as int,
           photoUrl: created['photoUrl'] as String?,
+          isVeg: created['isVeg'] as bool? ?? true,
         );
   }
 
@@ -388,9 +390,17 @@ class _OnMenuCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(dish.name,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 16)),
+                    Row(
+                      children: [
+                        VegBadge(isVeg: dish.isVeg, size: 15),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(dish.name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 16)),
+                        ),
+                      ],
+                    ),
                     Text(_rupees(dish.pricePaise),
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.outline)),
@@ -460,15 +470,52 @@ class _OffMenuCard extends ConsumerWidget {
     final notifier = ref.read(dailyMenuProvider(dateStr).notifier);
     return Opacity(
       opacity: 0.65,
+      // A custom Row rather than ListTile: ListTile runs an intrinsic-width pass
+      // that an Expanded title makes infinite (crashes under semantics). This
+      // gives the same look with full layout control.
       child: Card(
-        child: ListTile(
-          leading: _Thumb(url: dish.photoUrl),
-          title: Text(dish.name),
-          subtitle: Text(_rupees(dish.pricePaise)),
-          trailing: FilledButton.tonalIcon(
-            onPressed: () => notifier.quickAdd(dish.menuItemId),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Quick add'),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              _Thumb(url: dish.photoUrl),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        VegBadge(isVeg: dish.isVeg, size: 14),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(dish.name,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(_rupees(dish.pricePaise),
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.outline)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonalIcon(
+                // Constrain: the app theme sets button minWidth = infinity,
+                // which would crash as a non-flex Row child.
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => notifier.quickAdd(dish.menuItemId),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Quick add'),
+              ),
+            ],
           ),
         ),
       ),
@@ -640,6 +687,59 @@ class _ThumbFallback extends StatelessWidget {
       );
 }
 
+/// Veg / Non-veg picker used when creating and editing a dish. Two tiles, each
+/// with the standard marker; the selected one is highlighted.
+class _VegSelector extends StatelessWidget {
+  const _VegSelector({required this.isVeg, required this.onChanged});
+  final bool isVeg;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: _option(context, veg: true, selected: isVeg)),
+        const SizedBox(width: 12),
+        Expanded(child: _option(context, veg: false, selected: !isVeg)),
+      ],
+    );
+  }
+
+  Widget _option(BuildContext context,
+      {required bool veg, required bool selected}) {
+    final color =
+        veg ? const Color(0xFF5C8570) : const Color(0xFFB4472F);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => onChanged(veg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? color
+                : Theme.of(context).colorScheme.outlineVariant,
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            VegBadge(isVeg: veg, size: 18),
+            const SizedBox(width: 8),
+            Text(veg ? 'Veg' : 'Non-veg',
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: selected ? color : null)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyHint extends StatelessWidget {
   const _EmptyHint({
     required this.icon,
@@ -702,6 +802,7 @@ class _EditDishDetailsScreenState
   late final _name = TextEditingController(text: widget.dish.name);
   late final _price =
       TextEditingController(text: (widget.dish.pricePaise ~/ 100).toString());
+  late bool _isVeg = widget.dish.isVeg;
   final Set<String> _prefs = {};
   bool _saving = false;
   bool _deleting = false;
@@ -756,7 +857,7 @@ class _EditDishDetailsScreenState
       final api = ref.read(apiClientProvider);
       final id = widget.dish.menuItemId;
       await api.patch('/menu/items/$id',
-          body: {'name': name, 'pricePaise': rupees * 100});
+          body: {'name': name, 'pricePaise': rupees * 100, 'isVeg': _isVeg});
       await api.put('/menu/items/$id/preferences',
           body: {'preferences': _prefs.toList()});
       // Reflect the catalog edit locally without disturbing staged daily edits.
@@ -764,6 +865,7 @@ class _EditDishDetailsScreenState
             id,
             name: name,
             pricePaise: rupees * 100,
+            isVeg: _isVeg,
           );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -836,6 +938,13 @@ class _EditDishDetailsScreenState
                 labelText: 'Price (₹) *', prefixText: '₹ ', helperText: 'Max ₹200'),
           ),
           const SizedBox(height: 24),
+          Text('Food type', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          _VegSelector(
+            isVeg: _isVeg,
+            onChanged: (v) => setState(() => _isVeg = v),
+          ),
+          const SizedBox(height: 24),
           Text('Preferences offered',
               style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
@@ -905,6 +1014,7 @@ class _NewDishScreenState extends ConsumerState<_NewDishScreen> {
   final _price = TextEditingController();
   final _picker = ImagePicker();
   XFile? _photo;
+  bool _isVeg = true;
   bool _loading = false;
   String? _error;
 
@@ -939,7 +1049,7 @@ class _NewDishScreenState extends ConsumerState<_NewDishScreen> {
     try {
       final api = ref.read(apiClientProvider);
       final item = await api.post('/menu/items',
-          body: {'name': name, 'pricePaise': rupees * 100});
+          body: {'name': name, 'pricePaise': rupees * 100, 'isVeg': _isVeg});
       final id = item['id'] as String;
       String? photoUrl;
       if (_photo != null) {
@@ -954,6 +1064,7 @@ class _NewDishScreenState extends ConsumerState<_NewDishScreen> {
           'name': name,
           'pricePaise': rupees * 100,
           'photoUrl': photoUrl,
+          'isVeg': _isVeg,
         });
       }
     } catch (e) {
@@ -1009,6 +1120,13 @@ class _NewDishScreenState extends ConsumerState<_NewDishScreen> {
               prefixText: '₹ ',
               helperText: 'Max ₹200 per dish',
             ),
+          ),
+          const SizedBox(height: 20),
+          Text('Food type', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          _VegSelector(
+            isVeg: _isVeg,
+            onChanged: (v) => setState(() => _isVeg = v),
           ),
           const SizedBox(height: 8),
           Text(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 
@@ -95,14 +96,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.storefront,
-                  size: 64, color: Theme.of(context).colorScheme.primary),
+              const Center(child: HomelyLogoMark(size: 76)),
               const SizedBox(height: 16),
-              Text('Homely',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      )),
+              const Center(child: HomelyWordmark(fontSize: 34)),
               const SizedBox(height: 8),
               Text('Homely lunch & dinner from cooks near you',
                   textAlign: TextAlign.center,

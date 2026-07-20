@@ -143,6 +143,19 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           const Divider(height: 32),
           _TotalRow(label: 'Food total', paise: cart.foodTotalPaise),
           _TotalRow(label: 'Platform fee', paise: cart.platformFeePaise),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Pickup'),
+                Text('FREE',
+                    style: TextStyle(
+                        color: HomelyColors.sageDeep,
+                        fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ),
           const SizedBox(height: 4),
           _TotalRow(
             label: 'To pay',
@@ -155,7 +168,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
             const SizedBox(height: 12),
           ],
-          ElevatedButton(
+          FilledButton(
+            style: HomelyStyles.accentButton,
             onPressed: _placing ? null : () => _placeAndPay(cart),
             child: _placing
                 ? const SizedBox(

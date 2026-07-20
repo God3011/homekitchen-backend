@@ -105,15 +105,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.restaurant,
-                  size: 64, color: Theme.of(context).colorScheme.primary),
+              const Center(child: HomelyLogoMark(size: 76)),
               const SizedBox(height: 16),
-              Text('Homely Kitchen',
+              const Center(child: HomelyWordmark(fontSize: 32)),
+              const SizedBox(height: 4),
+              Text('for Kitchens',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      )),
-              const SizedBox(height: 8),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: HomelyColors.goldDeep,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 10),
               Text('Sign in to manage your kitchen',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium),

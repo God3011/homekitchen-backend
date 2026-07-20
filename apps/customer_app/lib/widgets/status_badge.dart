@@ -5,23 +5,23 @@ import 'package:shared/shared.dart';
 ({String label, Color color}) statusPresentation(OrderStatus status) {
   switch (status) {
     case OrderStatus.received:
-      return (label: 'Order placed', color: Colors.blueGrey);
+      return (label: 'Order placed', color: HomelyColors.blueDeep);
     case OrderStatus.preparing:
-      return (label: 'Preparing', color: Colors.orange);
+      return (label: 'Preparing', color: HomelyColors.goldDeep);
     case OrderStatus.ready:
-      return (label: 'Ready for pickup', color: Colors.green);
+      return (label: 'Ready for pickup', color: HomelyColors.sageDeep);
     case OrderStatus.customer_en_route:
-      return (label: 'On the way', color: Colors.teal);
+      return (label: 'On the way', color: HomelyColors.blueDeep);
     case OrderStatus.customer_arrived:
-      return (label: 'Arrived', color: Colors.teal);
+      return (label: 'Arrived', color: HomelyColors.blueDeep);
     case OrderStatus.out_for_delivery:
-      return (label: 'Out for delivery', color: Colors.teal);
+      return (label: 'Out for delivery', color: HomelyColors.blueDeep);
     case OrderStatus.completed:
-      return (label: 'Completed', color: Colors.green);
+      return (label: 'Completed', color: HomelyColors.sageDeep);
     case OrderStatus.rejected:
-      return (label: 'Declined', color: Colors.red);
+      return (label: 'Declined', color: HomelyColors.danger);
     case OrderStatus.cancelled:
-      return (label: 'Cancelled', color: Colors.grey);
+      return (label: 'Cancelled', color: HomelyColors.inkFaint);
   }
 }
 

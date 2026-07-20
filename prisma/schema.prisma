@@ -228,6 +228,7 @@ model MenuItem {
   name              String
   photoUrl          String?  @map("photo_url")
   pricePaise        Int      @map("price_paise")
+  isVeg             Boolean  @default(true) @map("is_veg")
   pickupAvailable   Boolean  @default(true) @map("pickup_available")
   deliveryAvailable Boolean  @default(false) @map("delivery_available")
   deliveryFeePaise  Int      @default(0) @map("delivery_fee_paise")

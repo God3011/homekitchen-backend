@@ -19,6 +19,11 @@ export class CreateMenuItemDto {
   @IsString()
   photoUrl?: string;
 
+  // Veg vs non-veg. Defaults to veg when omitted.
+  @IsOptional()
+  @IsBoolean()
+  isVeg?: boolean;
+
   @IsOptional()
   @IsBoolean()
   pickupAvailable?: boolean;

@@ -17,4 +17,9 @@ export 'auth/auth_service.dart';
 export 'analytics/analytics.dart';
 
 // Theme
+export 'theme/app_colors.dart';
 export 'theme/app_theme.dart';
+
+// Widgets
+export 'widgets/veg_badge.dart';
+export 'widgets/homely_logo.dart';

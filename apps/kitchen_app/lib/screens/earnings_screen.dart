@@ -138,43 +138,45 @@ class _PendingBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      color: scheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(Icons.account_balance_wallet,
-                  color: scheme.onPrimaryContainer),
-              const SizedBox(width: 8),
-              Text('Pending Balance',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: scheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w600)),
-            ]),
-            const SizedBox(height: 8),
-            Text(_rupees(pendingPaise),
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: scheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Row(children: [
-              Icon(Icons.event, size: 16, color: scheme.onPrimaryContainer),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Payouts are settled weekly — next payout Monday',
-                  style: TextStyle(color: scheme.onPrimaryContainer),
-                ),
+    // Money is the app's gold "appetite" colour — the balance is the hero.
+    final onGold = HomelyColors.ink.withValues(alpha: 0.75);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: HomelyColors.gold,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.account_balance_wallet_rounded, color: onGold, size: 20),
+            const SizedBox(width: 8),
+            Text('Pending balance',
+                style: TextStyle(
+                    color: onGold,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
+          ]),
+          const SizedBox(height: 8),
+          Text(_rupees(pendingPaise),
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  color: HomelyColors.ink, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Icon(Icons.event, size: 16, color: onGold),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Payouts are settled weekly — next payout Monday',
+                style: TextStyle(color: onGold, fontSize: 13),
               ),
-            ]),
-            // TODO(v2): self-serve withdrawals — a "Withdraw" button + bank
-            // details collection (RazorpayX) goes here. v1 is scheduled payouts.
-          ],
-        ),
+            ),
+          ]),
+          // TODO(v2): self-serve withdrawals — a "Withdraw" button + bank
+          // details collection (RazorpayX) goes here. v1 is scheduled payouts.
+        ],
       ),
     );
   }
@@ -203,6 +205,7 @@ class _SummaryCard extends StatelessWidget {
               'Net earnings',
               _rupees(summary.netEarningsPaise),
               bold: true,
+              valueColor: HomelyColors.goldDeep,
             ),
           ],
         ),
@@ -211,7 +214,7 @@ class _SummaryCard extends StatelessWidget {
   }
 
   Widget _row(BuildContext context, String label, String value,
-      {bool bold = false}) {
+      {bool bold = false, Color? valueColor}) {
     final style = bold
         ? Theme.of(context)
             .textTheme
@@ -222,7 +225,7 @@ class _SummaryCard extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: style),
-        Text(value, style: style),
+        Text(value, style: style?.copyWith(color: valueColor)),
       ],
     );
   }
@@ -268,9 +271,10 @@ class _PayoutHistory extends ConsumerWidget {
             for (final p in list)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.south_west, color: Colors.green),
+                  leading: const Icon(Icons.south_west,
+                      color: HomelyColors.sageDeep),
                   title: Text(_rupees(p.amountPaise),
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(_humanDate(p.payoutDate)),
                   trailing: p.note != null
                       ? SizedBox(

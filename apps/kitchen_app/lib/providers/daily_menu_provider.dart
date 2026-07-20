@@ -10,6 +10,7 @@ class DailyDish {
   final String name;
   final int pricePaise;
   final String? photoUrl;
+  final bool isVeg;
   final bool onMenu;
   final int platesTotal;
   final int platesRemaining;
@@ -20,6 +21,7 @@ class DailyDish {
     required this.name,
     required this.pricePaise,
     this.photoUrl,
+    this.isVeg = true,
     required this.onMenu,
     required this.platesTotal,
     required this.platesRemaining,
@@ -35,6 +37,7 @@ class DailyDish {
         name: j['name'] as String,
         pricePaise: j['pricePaise'] as int,
         photoUrl: j['photoUrl'] as String?,
+        isVeg: j['isVeg'] as bool? ?? true,
         onMenu: j['onMenu'] as bool,
         platesTotal: j['platesTotal'] as int,
         platesRemaining: j['platesRemaining'] as int,
@@ -52,6 +55,7 @@ class DailyDish {
         name: name,
         pricePaise: pricePaise,
         photoUrl: photoUrl,
+        isVeg: isVeg,
         onMenu: onMenu ?? this.onMenu,
         platesTotal: platesTotal ?? this.platesTotal,
         platesRemaining: platesRemaining ?? this.platesRemaining,
@@ -215,6 +219,7 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
     required String name,
     required int pricePaise,
     String? photoUrl,
+    bool isVeg = true,
     int plates = 10,
   }) {
     final base = DailyDish(
@@ -222,6 +227,7 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
       name: name,
       pricePaise: pricePaise,
       photoUrl: photoUrl,
+      isVeg: isVeg,
       onMenu: false,
       platesTotal: 0,
       platesRemaining: 0,
@@ -244,7 +250,8 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
   /// Reflect a catalog edit (name/price/photo persisted immediately elsewhere)
   /// into both baseline and working without touching staged daily edits — these
   /// fields aren't part of `sameStateAs`, so `dirty` is unaffected.
-  void patchCatalog(String id, {String? name, int? pricePaise, String? photoUrl}) {
+  void patchCatalog(String id,
+      {String? name, int? pricePaise, String? photoUrl, bool? isVeg}) {
     DailyDish upd(DailyDish d) => d.menuItemId != id
         ? d
         : DailyDish(
@@ -252,6 +259,7 @@ class DailyMenuNotifier extends StateNotifier<DailyMenuState> {
             name: name ?? d.name,
             pricePaise: pricePaise ?? d.pricePaise,
             photoUrl: photoUrl ?? d.photoUrl,
+            isVeg: isVeg ?? d.isVeg,
             onMenu: d.onMenu,
             platesTotal: d.platesTotal,
             platesRemaining: d.platesRemaining,

@@ -107,119 +107,63 @@ class _DashboardPage extends ConsumerWidget {
           padding: const EdgeInsets.all(24),
           children: [
             // Cooking Today toggle
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    Icon(Icons.restaurant_menu,
-                        size: 32,
-                        color: isCooking ? Colors.green : Colors.grey),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Cooking Today?',
-                              style: Theme.of(context).textTheme.titleMedium),
-                          Text(
-                            isCooking
-                                ? 'You are accepting orders'
-                                : 'Toggle on to start',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Switch(
-                      value: isCooking,
-                      onChanged: (val) => _toggleCooking(ref, val),
-                    ),
-                  ],
-                ),
-              ),
+            _CookingCard(
+              isCooking: isCooking,
+              onChanged: (v) => _toggleCooking(ref, v),
             ),
             const SizedBox(height: 16),
-            // Order count
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    const Icon(Icons.receipt_long, size: 32, color: Colors.blue),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Today's Orders",
-                              style: Theme.of(context).textTheme.titleMedium),
-                          Text('$orderCount order${orderCount != 1 ? 's' : ''}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatTile(
+                    icon: Icons.receipt_long_rounded,
+                    label: "Today's orders",
+                    accent: HomelyColors.blueDeep,
+                    value: Text(
+                      '$orderCount',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineMedium
+                          ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: HomelyColors.blueDeep),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Today's earnings widget — backed by earningsProvider('today').
-            // Tap navigates to the full Earnings & Payouts screen.
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const EarningsScreen(),
-                ),
-              ),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.account_balance_wallet,
-                          size: 32, color: Colors.green),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Today's Earnings",
-                                style: Theme.of(context).textTheme.titleMedium),
-                            todayEarningsAsync.when(
-                              loading: () => const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                              error: (_, _) => Text(
-                                '—',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                              data: (s) => Text(
-                                '₹${(s.netEarningsPaise / 100).toStringAsFixed(0)}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right, color: Colors.grey),
-                    ],
                   ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatTile(
+                    icon: Icons.account_balance_wallet_rounded,
+                    label: "Today's earnings",
+                    accent: HomelyColors.goldDeep,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EarningsScreen()),
+                    ),
+                    value: todayEarningsAsync.when(
+                      loading: () => const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      error: (_, _) => Text('—',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      data: (s) => Text(
+                        '₹${(s.netEarningsPaise / 100).toStringAsFixed(0)}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: HomelyColors.goldDeep),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -243,5 +187,128 @@ class _DashboardPage extends ConsumerWidget {
     });
 
     ref.invalidate(dailyStatusProvider);
+  }
+}
+
+/// The "Cooking Today" toggle: a sage-filled card when live, quiet white when
+/// off — the single most important control on the dashboard.
+class _CookingCard extends StatelessWidget {
+  const _CookingCard({required this.isCooking, required this.onChanged});
+  final bool isCooking;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = isCooking ? Colors.white : HomelyColors.ink;
+    final fgSoft =
+        isCooking ? Colors.white.withValues(alpha: 0.85) : HomelyColors.inkSoft;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isCooking ? HomelyColors.sage : HomelyColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+            color: isCooking ? HomelyColors.sage : HomelyColors.line),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isCooking
+                ? Icons.local_fire_department_rounded
+                : Icons.restaurant_menu_rounded,
+            size: 30,
+            color: isCooking ? Colors.white : HomelyColors.inkFaint,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Cooking Today',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(color: fg)),
+                Text(
+                  isCooking
+                      ? "You're visible to customers nearby"
+                      : 'Toggle on to start taking orders',
+                  style: TextStyle(fontSize: 12.5, color: fgSoft),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: isCooking,
+            onChanged: onChanged,
+            thumbColor: const WidgetStatePropertyAll(Colors.white),
+            trackColor: WidgetStateProperty.resolveWith(
+              (s) => s.contains(WidgetState.selected)
+                  ? Colors.white.withValues(alpha: 0.35)
+                  : HomelyColors.inkFaint.withValues(alpha: 0.4),
+            ),
+            trackOutlineColor:
+                const WidgetStatePropertyAll(Colors.transparent),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A dashboard metric tile: an accent-tinted icon, a caption, and a big value.
+class _StatTile extends StatelessWidget {
+  const _StatTile({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.value,
+    this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final Widget value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: HomelyColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: HomelyColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 18, color: accent),
+              ),
+              const SizedBox(height: 12),
+              Text(label.toUpperCase(),
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: HomelyColors.inkFaint)),
+              const SizedBox(height: 3),
+              value,
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -25,6 +25,7 @@ class MenuItem {
   final String? categoryId;
   final int pricePaise;
   final String? photoUrl;
+  final bool isVeg;
   final bool isActive;
   final List<MenuItemPreference> preferences;
 
@@ -35,6 +36,7 @@ class MenuItem {
     this.categoryId,
     required this.pricePaise,
     this.photoUrl,
+    this.isVeg = true,
     required this.isActive,
     this.preferences = const [],
   });
@@ -47,6 +49,7 @@ class MenuItem {
       categoryId: json['categoryId'] as String?,
       pricePaise: json['pricePaise'] as int,
       photoUrl: json['photoUrl'] as String?,
+      isVeg: json['isVeg'] as bool? ?? true,
       isActive: json['isActive'] as bool,
       preferences: (json['preferences'] as List<dynamic>?)
               ?.map((e) =>
@@ -64,6 +67,7 @@ class MenuItem {
       'categoryId': categoryId,
       'pricePaise': pricePaise,
       'photoUrl': photoUrl,
+      'isVeg': isVeg,
       'isActive': isActive,
       'preferences': preferences.map((e) => e.toJson()).toList(),
     };

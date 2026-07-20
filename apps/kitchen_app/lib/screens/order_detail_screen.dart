@@ -64,7 +64,7 @@ class _OrderDetailBody extends ConsumerWidget {
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
-                  ?.copyWith(color: Colors.orange)),
+                  ?.copyWith(color: HomelyColors.goldDeep)),
         ],
         const Divider(height: 32),
 
@@ -176,22 +176,34 @@ class _OrderDetailBody extends ConsumerWidget {
       s == OrderStatus.customer_en_route ||
       s == OrderStatus.customer_arrived;
 
+  // Standard traffic-light semantics for accept/reject, kept separate from the
+  // blue+gold brand palette.
+  static const _green = Color(0xFF1F9D57);
+
   Widget _buildActions(BuildContext context, WidgetRef ref) {
     switch (order.status) {
       case OrderStatus.received:
         return Column(
           children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.check),
-              label: const Text('Accept Order'),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 52),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Accept order'),
               onPressed: () => _acceptOrder(context, ref),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             OutlinedButton.icon(
-              icon: const Icon(Icons.close),
-              label: const Text('Reject Order'),
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('Decline order'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: HomelyColors.danger,
+                side: const BorderSide(color: HomelyColors.danger),
               ),
               onPressed: () => _rejectOrder(context, ref),
             ),
@@ -200,15 +212,16 @@ class _OrderDetailBody extends ConsumerWidget {
       case OrderStatus.preparing:
         return ElevatedButton.icon(
           icon: const Icon(Icons.done_all),
-          label: const Text('Mark Ready'),
+          label: const Text('Mark ready'),
           onPressed: () => _markReady(context, ref),
         );
       case OrderStatus.ready:
       case OrderStatus.customer_en_route:
       case OrderStatus.customer_arrived:
-        return ElevatedButton.icon(
-          icon: const Icon(Icons.handshake),
-          label: const Text('Confirm Handover'),
+        return FilledButton.icon(
+          style: HomelyStyles.accentButton,
+          icon: const Icon(Icons.verified_outlined),
+          label: const Text('Confirm handover'),
           onPressed: () => _confirmHandover(context, ref),
         );
       default:

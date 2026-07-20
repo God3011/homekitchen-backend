@@ -25,13 +25,13 @@ class StatusBadge extends StatelessWidget {
   }
 
   static Color _color(OrderStatus s) => switch (s) {
-        OrderStatus.received => Colors.blue,
-        OrderStatus.preparing => Colors.orange,
-        OrderStatus.ready => Colors.green,
-        OrderStatus.completed => Colors.grey,
-        OrderStatus.rejected => Colors.red,
-        OrderStatus.cancelled => Colors.red.shade300,
-        _ => Colors.blueGrey,
+        OrderStatus.received => HomelyColors.goldDeep,
+        OrderStatus.preparing => HomelyColors.blueDeep,
+        OrderStatus.ready => HomelyColors.sageDeep,
+        OrderStatus.completed => HomelyColors.inkFaint,
+        OrderStatus.rejected => HomelyColors.danger,
+        OrderStatus.cancelled => HomelyColors.nonVeg,
+        _ => HomelyColors.blueDeep,
       };
 
   static String _label(OrderStatus s) => switch (s) {

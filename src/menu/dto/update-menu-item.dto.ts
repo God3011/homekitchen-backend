@@ -22,6 +22,10 @@ export class UpdateMenuItemDto {
 
   @IsOptional()
   @IsBoolean()
+  isVeg?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   pickupAvailable?: boolean;
 
   @IsOptional()

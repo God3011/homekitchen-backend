@@ -138,11 +138,20 @@ class DishRow extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(dish.name,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    VegBadge(isVeg: dish.isVeg, size: 15),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(dish.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 2),
                 Text(formatPaise(dish.pricePaise),
                     style: Theme.of(context).textTheme.bodyMedium),
@@ -177,12 +186,16 @@ class DishRow extends ConsumerWidget {
             OutlinedButton(
               // Override the theme's full-width (double.infinity) min size —
               // inside a Row that would demand infinite width and crash layout.
+              // Gold "appetite" treatment: this is a food action.
               style: OutlinedButton.styleFrom(
+                foregroundColor: HomelyColors.goldDeep,
+                backgroundColor: HomelyColors.goldTint,
+                side: const BorderSide(color: HomelyColors.gold, width: 1.4),
                 minimumSize: const Size(72, 40),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
               onPressed: () => _add(context, ref),
-              child: const Text('Add'),
+              child: const Text('ADD'),
             )
           else
             _Stepper(
@@ -214,21 +227,22 @@ class _Stepper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).colorScheme.primary),
-        borderRadius: BorderRadius.circular(8),
+        color: HomelyColors.gold,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.remove, size: 18),
+            icon: const Icon(Icons.remove, size: 18, color: HomelyColors.ink),
             visualDensity: VisualDensity.compact,
             onPressed: onRemove,
           ),
           Text('$quantity',
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+              style: const TextStyle(
+                  fontWeight: FontWeight.w800, color: HomelyColors.ink)),
           IconButton(
-            icon: const Icon(Icons.add, size: 18),
+            icon: const Icon(Icons.add, size: 18, color: HomelyColors.ink),
             visualDensity: VisualDensity.compact,
             onPressed: onAdd,
           ),
