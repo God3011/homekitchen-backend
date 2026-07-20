@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsUUID, IsArray } from 'class-validator';
 
 export class UpdateKitchenDto {
   @IsOptional()
@@ -12,6 +12,11 @@ export class UpdateKitchenDto {
   @IsOptional()
   @IsString()
   cookPhotoUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  kitchenPhotoUrls?: string[];
 
   @IsOptional()
   @IsString()

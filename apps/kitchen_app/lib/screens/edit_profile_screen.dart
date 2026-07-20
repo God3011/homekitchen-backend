@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
@@ -24,6 +27,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       TextEditingController(text: widget.kitchen.signatureDish ?? '');
   late final _story = TextEditingController(text: widget.kitchen.story ?? '');
   AddressResult? _addr;
+  
+  final _picker = ImagePicker();
+  XFile? _newCookPhoto;
+  late final List<String> _existingKitchenPhotos =
+      List.from(widget.kitchen.kitchenPhotoUrls);
+  final List<XFile> _newKitchenPhotos = [];
+
   bool _saving = false;
   String? _error;
 
@@ -47,9 +57,31 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       _error = null;
     });
     try {
-      await ref.read(apiClientProvider).patch('/kitchens/me', body: {
+      final api = ref.read(apiClientProvider);
+
+      // Upload new cook photo if picked
+      String? cookPhotoUrl = widget.kitchen.cookPhotoUrl;
+      if (_newCookPhoto != null) {
+        final res = await api.postMultipart('/kitchens/me/upload-photo',
+            files: {'photo': [_newCookPhoto!.path]});
+        cookPhotoUrl = res['photoUrl'] as String?;
+      }
+
+      // Upload new kitchen photos
+      final allKitchenPhotos = [..._existingKitchenPhotos];
+      for (final f in _newKitchenPhotos) {
+        final res = await api.postMultipart('/kitchens/me/upload-photo',
+            files: {'photo': [f.path]});
+        if (res['photoUrl'] != null) {
+          allKitchenPhotos.add(res['photoUrl'] as String);
+        }
+      }
+
+      await api.patch('/kitchens/me', body: {
         'kitchenName': name,
         'cookName': _cookName.text.trim(),
+        'cookPhotoUrl': cookPhotoUrl,
+        'kitchenPhotoUrls': allKitchenPhotos,
         'signatureDish': _signatureDish.text.trim(),
         'story': _story.text.trim(),
         if (_addr != null) ...{
@@ -79,8 +111,124 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          Center(
+            child: GestureDetector(
+              onTap: () async {
+                final picked = await _picker.pickImage(
+                    source: ImageSource.gallery, imageQuality: 80);
+                if (picked != null) setState(() => _newCookPhoto = picked);
+              },
+              child: CircleAvatar(
+                radius: 40,
+                backgroundColor: HomelyColors.surface,
+                backgroundImage: _newCookPhoto != null
+                    ? FileImage(File(_newCookPhoto!.path))
+                    : (widget.kitchen.cookPhotoUrl != null
+                        ? NetworkImage(widget.kitchen.cookPhotoUrl!)
+                        : null) as ImageProvider?,
+                child: (_newCookPhoto == null &&
+                        widget.kitchen.cookPhotoUrl == null)
+                    ? const Icon(Icons.add_a_photo,
+                        color: HomelyColors.inkFaint)
+                    : null,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Center(
+              child: Text('Cook Photo',
+                  style: TextStyle(color: HomelyColors.inkFaint, fontSize: 12))),
+          const SizedBox(height: 24),
+
           _field(_kitchenName, 'Kitchen Name *'),
           _field(_cookName, 'Your Name'),
+
+          Text('Banner Photos', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final url in _existingKitchenPhotos)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(url,
+                              width: 120, height: 80, fit: BoxFit.cover),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: InkWell(
+                            onTap: () => setState(
+                                () => _existingKitchenPhotos.remove(url)),
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.white,
+                              child: Icon(Icons.close,
+                                  size: 16, color: HomelyColors.danger),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                for (final f in _newKitchenPhotos)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(File(f.path),
+                              width: 120, height: 80, fit: BoxFit.cover),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: InkWell(
+                            onTap: () =>
+                                setState(() => _newKitchenPhotos.remove(f)),
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.white,
+                              child: Icon(Icons.close,
+                                  size: 16, color: HomelyColors.danger),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                InkWell(
+                  onTap: () async {
+                    final picked = await _picker.pickImage(
+                        source: ImageSource.gallery, imageQuality: 80);
+                    if (picked != null) {
+                      setState(() => _newKitchenPhotos.add(picked));
+                    }
+                  },
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: HomelyColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: HomelyColors.surfaceAlt),
+                    ),
+                    child: const Icon(Icons.add_a_photo,
+                        color: HomelyColors.inkFaint),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
           _field(_signatureDish, 'Signature Dish'),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),

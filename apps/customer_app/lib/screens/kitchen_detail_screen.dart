@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
@@ -529,6 +531,96 @@ class _MiniStepper extends StatelessWidget {
   }
 }
 
+class _KitchenImageSlider extends StatefulWidget {
+  const _KitchenImageSlider({required this.photos});
+  final List<String> photos;
+
+  @override
+  State<_KitchenImageSlider> createState() => _KitchenImageSliderState();
+}
+
+class _KitchenImageSliderState extends State<_KitchenImageSlider> {
+  final _pageController = PageController();
+  int _currentPage = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.photos.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 3), (Timer timer) {
+        if (_currentPage < widget.photos.length - 1) {
+          _currentPage++;
+        } else {
+          _currentPage = 0;
+        }
+        if (_pageController.hasClients) {
+          _pageController.animateToPage(
+            _currentPage,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.photos.isEmpty) return const _HeroFallback();
+    if (widget.photos.length == 1) {
+      return Image.network(widget.photos.first,
+          fit: BoxFit.cover, errorBuilder: (_, _, _) => const _HeroFallback());
+    }
+
+    return Stack(
+      children: [
+        PageView.builder(
+          controller: _pageController,
+          onPageChanged: (i) => setState(() => _currentPage = i),
+          itemCount: widget.photos.length,
+          itemBuilder: (context, index) {
+            return Image.network(
+              widget.photos[index],
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const _HeroFallback(),
+            );
+          },
+        ),
+        Positioned(
+          bottom: 12,
+          left: 0,
+          right: 0,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              widget.photos.length,
+              (index) => Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _currentPage == index
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   const _Header({required this.kitchen, required this.serviceable});
   final Kitchen kitchen;
@@ -536,11 +628,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final photos = [
-      if (kitchen.cookPhotoUrl != null && kitchen.cookPhotoUrl!.isNotEmpty)
-        kitchen.cookPhotoUrl!,
-      ...kitchen.kitchenPhotoUrls,
-    ];
+    final photos = kitchen.kitchenPhotoUrls;
     final hasRating = kitchen.ratingAvg != null && kitchen.ratingCount > 0;
     final hasSignature =
         kitchen.signatureDish != null && kitchen.signatureDish!.isNotEmpty;
@@ -557,9 +645,7 @@ class _Header extends StatelessWidget {
                 height: 190,
                 width: double.infinity,
                 child: photos.isNotEmpty
-                    ? Image.network(photos.first,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const _HeroFallback())
+                    ? _KitchenImageSlider(photos: photos)
                     : const _HeroFallback(),
               ),
               Positioned(
@@ -587,30 +673,30 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        if (photos.length > 1) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 60,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: photos.length - 1,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) => ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(photos[i + 1],
-                    width: 84, height: 60, fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const SizedBox(
-                        width: 84, height: 60, child: _HeroFallback())),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(kitchen.kitchenName,
+                      style: Theme.of(context).textTheme.headlineSmall),
+                  if (kitchen.cookName != null && kitchen.cookName!.isNotEmpty)
+                    Text('by ${kitchen.cookName}',
+                        style: const TextStyle(color: HomelyColors.inkFaint)),
+                ],
               ),
             ),
-          ),
-        ],
-        const SizedBox(height: 14),
-        Text(kitchen.kitchenName,
-            style: Theme.of(context).textTheme.headlineSmall),
-        if (kitchen.cookName != null && kitchen.cookName!.isNotEmpty)
-          Text('by ${kitchen.cookName}',
-              style: const TextStyle(color: HomelyColors.inkFaint)),
+            if (kitchen.cookPhotoUrl != null &&
+                kitchen.cookPhotoUrl!.isNotEmpty)
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: HomelyColors.surface,
+                backgroundImage: NetworkImage(kitchen.cookPhotoUrl!),
+              ),
+          ],
+        ),
         if (hasRating || hasSignature) ...[
           const SizedBox(height: 10),
           Row(

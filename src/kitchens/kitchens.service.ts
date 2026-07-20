@@ -149,6 +149,15 @@ export class KitchensService {
     });
   }
 
+  async uploadPhoto(kitchenId: string, photo?: UploadFile) {
+    if (!photo) throw new BadRequestException('No photo provided.');
+    // Look up the firebaseUid to keep the prefix consistent, though using kitchenId is also fine
+    const k = await this.prisma.kitchen.findUnique({ where: { id: kitchenId }, select: { firebaseUid: true }});
+    const prefix = k ? `kitchens/${k.firebaseUid}` : `kitchens/${kitchenId}`;
+    const url = await this.storage.uploadImage(photo, prefix);
+    return { photoUrl: url };
+  }
+
   // ── Documents ────────────────────────────────────────────────────────
   uploadDocument(kitchenId: string, dto: UploadDocumentDto) {
     return this.prisma.kitchenDocument.create({
@@ -428,6 +437,7 @@ export class KitchensService {
         kitchenName: true,
         cookName: true,
         cookPhotoUrl: true,
+        kitchenPhotoUrls: true,
         story: true,
         signatureDish: true,
         addressLine: true,

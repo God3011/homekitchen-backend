@@ -803,7 +803,10 @@ class _EditDishDetailsScreenState
   late final _price =
       TextEditingController(text: (widget.dish.pricePaise ~/ 100).toString());
   late bool _isVeg = widget.dish.isVeg;
-  final Set<String> _prefs = {};
+  final _prefs = <String>{};
+  final _picker = ImagePicker();
+  XFile? _newPhoto;
+  
   bool _saving = false;
   bool _deleting = false;
   bool _prefsLoaded = false;
@@ -856,16 +859,26 @@ class _EditDishDetailsScreenState
     try {
       final api = ref.read(apiClientProvider);
       final id = widget.dish.menuItemId;
+      String? updatedPhotoUrl;
+      
+      if (_newPhoto != null) {
+        final res = await api.postMultipart('/menu/items/$id/photo',
+            files: {'photo': [_newPhoto!.path]});
+        updatedPhotoUrl = res['photoUrl'] as String?;
+      }
+      
       await api.patch('/menu/items/$id',
           body: {'name': name, 'pricePaise': rupees * 100, 'isVeg': _isVeg});
       await api.put('/menu/items/$id/preferences',
           body: {'preferences': _prefs.toList()});
+          
       // Reflect the catalog edit locally without disturbing staged daily edits.
       ref.read(dailyMenuProvider(widget.dateStr).notifier).patchCatalog(
             id,
             name: name,
             pricePaise: rupees * 100,
             isVeg: _isVeg,
+            photoUrl: updatedPhotoUrl,
           );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -925,10 +938,46 @@ class _EditDishDetailsScreenState
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(labelText: 'Dish Name *'),
-            textCapitalization: TextCapitalization.words,
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () async {
+                  final picked = await _picker.pickImage(
+                      source: ImageSource.gallery, imageQuality: 80);
+                  if (picked != null) setState(() => _newPhoto = picked);
+                },
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: HomelyColors.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: HomelyColors.surfaceAlt),
+                  ),
+                  child: _newPhoto != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(File(_newPhoto!.path),
+                              fit: BoxFit.cover))
+                      : (widget.dish.photoUrl != null &&
+                              widget.dish.photoUrl!.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(widget.dish.photoUrl!,
+                                  fit: BoxFit.cover))
+                          : const Icon(Icons.add_a_photo,
+                              color: HomelyColors.inkFaint)),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextField(
+                  controller: _name,
+                  decoration: const InputDecoration(labelText: 'Dish Name *'),
+                  textCapitalization: TextCapitalization.words,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           TextField(

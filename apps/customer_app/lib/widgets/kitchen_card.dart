@@ -17,7 +17,9 @@ class KitchenCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final serviceable = kitchen.serviceable;
-    final photo = kitchen.cookPhotoUrl;
+    final photo = kitchen.kitchenPhotoUrls.isNotEmpty
+        ? kitchen.kitchenPhotoUrls.first
+        : kitchen.cookPhotoUrl;
     final hasRating = kitchen.ratingAvg != null && kitchen.ratingCount > 0;
 
     return Opacity(

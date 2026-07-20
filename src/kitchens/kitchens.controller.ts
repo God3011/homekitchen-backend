@@ -96,6 +96,19 @@ export class KitchensController {
     return this.kitchens.uploadDocumentFile(user.userId, dto.docType, file);
   }
 
+  // multipart: `photo` (image file for profile or banner). Uploads to R2.
+  @Roles('kitchen')
+  @Post('me/upload-photo')
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  uploadPhoto(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() photo: UploadFile,
+  ) {
+    return this.kitchens.uploadPhoto(user.userId, photo);
+  }
+
   @Roles('kitchen')
   @Get('me/orders')
   listOrders(

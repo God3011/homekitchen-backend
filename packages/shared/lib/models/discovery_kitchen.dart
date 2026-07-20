@@ -24,6 +24,7 @@ class DiscoveryKitchen {
   final bool hasVeg;
   // Today's available dish names — powers client-side dish search.
   final List<String> todayDishNames;
+  final List<String> kitchenPhotoUrls;
 
   const DiscoveryKitchen({
     required this.id,
@@ -42,6 +43,7 @@ class DiscoveryKitchen {
     this.dormantReason,
     this.hasVeg = false,
     this.todayDishNames = const [],
+    this.kitchenPhotoUrls = const [],
   });
 
   factory DiscoveryKitchen.fromJson(Map<String, dynamic> json) {
@@ -61,9 +63,14 @@ class DiscoveryKitchen {
       serviceable: json['serviceable'] as bool? ?? false,
       dormantReason: json['dormantReason'] as String?,
       hasVeg: json['hasVeg'] as bool? ?? false,
-      todayDishNames: ((json['todayDishNames'] as List<dynamic>?) ?? const [])
-          .map((e) => e as String)
-          .toList(),
+      todayDishNames: (json['todayDishNames'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      kitchenPhotoUrls: (json['kitchenPhotoUrls'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
     );
   }
 
