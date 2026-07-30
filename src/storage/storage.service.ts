@@ -106,12 +106,8 @@ export class StorageService {
     return `${this.publicBaseUrl}/${key}`;
   }
 
-  /** Upload many images, preserving order. */
-  async uploadImages(files: UploadFile[], keyPrefix = 'uploads'): Promise<string[]> {
-    const urls: string[] = [];
-    for (const f of files) {
-      urls.push(await this.uploadImage(f, keyPrefix));
-    }
-    return urls;
+  /** Upload many images in parallel, preserving order. */
+  uploadImages(files: UploadFile[], keyPrefix = 'uploads'): Promise<string[]> {
+    return Promise.all(files.map((f) => this.uploadImage(f, keyPrefix)));
   }
 }

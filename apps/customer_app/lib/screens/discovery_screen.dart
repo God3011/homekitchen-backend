@@ -24,6 +24,9 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   final _searchController = TextEditingController();
   String _query = '';
   bool _vegOnly = false;
+  // Guards `kitchen_list_viewed` so it fires once per genuine view of this
+  // screen, not on every provider refetch/pull-to-refresh/re-subscribe.
+  bool _listViewTracked = false;
 
   @override
   void dispose() {
@@ -47,21 +50,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     return out.toList();
   }
 
-  void _onCategoryTap(String term) {
-    setState(() {
-      // Tapping the active category clears it (toggle behaviour).
-      if (_query.trim().toLowerCase() == term.toLowerCase()) {
-        _query = '';
-        _searchController.clear();
-      } else {
-        _query = term;
-        _searchController.text = term;
-      }
-    });
-  }
-
   void _openKitchen(DiscoveryKitchen k) {
-    trackEvent('kitchen_profile_viewed', {'kitchen_id': k.id, 'zone_id': ''});
+    trackEvent('kitchen_profile_viewed', {
+      'kitchen_id': k.id,
+      'zone_id': ref.read(activeZoneIdProvider),
+    });
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => KitchenDetailScreen(
         kitchenId: k.id,
@@ -73,6 +66,20 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Fire `kitchen_list_viewed` exactly once, when the list first resolves for
+    // this screen instance. `ref.listen` (not the provider body) means refetches
+    // and pull-to-refresh don't re-fire it.
+    ref.listen<AsyncValue<DiscoveryResult>>(discoveryProvider, (_, next) {
+      if (_listViewTracked) return;
+      final result = next.valueOrNull;
+      if (result == null) return;
+      _listViewTracked = true;
+      trackEvent('kitchen_list_viewed', {
+        'zone_id': ref.read(activeZoneIdProvider),
+        'kitchen_count_shown': result.kitchens.length,
+      });
+    });
+
     final async = ref.watch(discoveryProvider);
 
     return Scaffold(
@@ -113,7 +120,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                           onChanged: (v) => setState(() => _query = v),
                           onSubmitted: (v) => trackEvent('search_performed', {
                             'query': v.trim(),
-                            'zone_id': '',
+                            'zone_id': ref.read(activeZoneIdProvider),
                             'result_count': _filter(result.kitchens).length,
                           }),
                         ),
@@ -125,10 +132,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                       ),
                     ],
                   ),
-                ),
-                _CategoryRail(
-                  selected: _query.trim(),
-                  onSelected: _onCategoryTap,
                 ),
                 if (result.isDormantOnly)
                   const _Banner(
@@ -430,86 +433,3 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
-/// Horizontal quick-filter rail of food categories, laid out right-to-left.
-/// Tapping a tile sets the search query; tapping the active one clears it.
-/// (Image tiles use branded placeholders until real category art is added.)
-class _CategoryRail extends StatelessWidget {
-  const _CategoryRail({required this.selected, required this.onSelected});
-
-  final String selected;
-  final ValueChanged<String> onSelected;
-
-  static const _cats = <_Cat>[
-    _Cat('Thali', Icons.dinner_dining, Color(0xFFE8A33D)),
-    _Cat('Biryani', Icons.rice_bowl, Color(0xFFB4472F)),
-    _Cat('Tiffins', Icons.bakery_dining, Color(0xFF6FB7C7)),
-    _Cat('Meals', Icons.restaurant, Color(0xFF7FA88C)),
-    _Cat('Curries', Icons.soup_kitchen, Color(0xFFC6841D)),
-    _Cat('Sweets', Icons.cake, Color(0xFFD98BA0)),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 96,
-      child: ListView.separated(
-        // Right-to-left: first tile sits at the right edge, scrolls leftward.
-        reverse: true,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-        itemCount: _cats.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (_, i) {
-          final c = _cats[i];
-          final on = selected.toLowerCase() == c.label.toLowerCase();
-          return InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => onSelected(c.label),
-            child: SizedBox(
-              width: 104,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      height: 58,
-                      width: 104,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [c.color.withValues(alpha: 0.85), c.color],
-                        ),
-                        border: on
-                            ? Border.all(
-                                color: const Color(0xFF2E2420), width: 2)
-                            : null,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(c.icon, color: Colors.white, size: 26),
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(c.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              on ? FontWeight.w800 : FontWeight.w600)),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _Cat {
-  const _Cat(this.label, this.icon, this.color);
-  final String label;
-  final IconData icon;
-  final Color color;
-}

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared/shared.dart';
+
+import '../providers/api_provider.dart';
 
 import '../models/customer_address.dart';
 import '../providers/addresses_provider.dart';
-import '../widgets/address_picker.dart';
 
 /// Add or edit a saved location. Fields: a required label ("Home"/"Office"/…),
 /// an optional display line, and a location picked via the OSM pin-drop picker.
@@ -141,6 +143,8 @@ class _AddressFormScreenState extends ConsumerState<AddressFormScreen> {
           Text('Location', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
           AddressPicker(
+            api: ref.read(apiClientProvider),
+            userAgentPackageName: 'com.homely.customer_app',
             initialLat: _lat,
             initialLng: _lng,
             initialAddress: widget.existing?.addressLine,

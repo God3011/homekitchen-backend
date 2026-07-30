@@ -27,12 +27,6 @@ class ApiClient {
     debugPrint('ApiClient initialized with baseUrl: $baseUrl (app: $appRole)');
   }
 
-  /// Manually set the Authorization Bearer header.
-  /// Useful for cases where you want to override the auto-attached token.
-  void setAuthToken(String token) {
-    _dio.options.headers['Authorization'] = 'Bearer $token';
-  }
-
   /// GET a single JSON object.
   Future<Map<String, dynamic>> get(
     String path, {
@@ -132,11 +126,6 @@ class _AuthInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    // If the header is already set (e.g. via setAuthToken), don't overwrite.
-    if (options.headers['Authorization'] != null) {
-      return handler.next(options);
-    }
-
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final token = await user.getIdToken();

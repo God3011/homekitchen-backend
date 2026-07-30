@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared/shared.dart';
 
-import 'config.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
@@ -37,7 +36,7 @@ Future<void> main() async {
   }
 
   await Firebase.initializeApp();
-  await initPush();
+  await initPushForApp();
   runApp(const ProviderScope(child: HomelyKitchenApp()));
 }
 

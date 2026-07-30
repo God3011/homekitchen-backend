@@ -29,14 +29,10 @@ final discoveryProvider =
     'lat': loc.lat.toString(),
     'lng': loc.lng.toString(),
   });
-  final result =
-      DiscoveryResult.fromJson(data, lat: loc.lat, lng: loc.lng);
-
-  trackEvent('kitchen_list_viewed', {
-    'zone_id': '',
-    'kitchen_count_shown': result.kitchens.length,
-  });
-  return result;
+  // NOTE: analytics for viewing the list live in DiscoveryScreen, not here.
+  // This provider body re-runs on every refetch/pull-to-refresh/re-subscribe,
+  // so firing `kitchen_list_viewed` from here would badly over-count.
+  return DiscoveryResult.fromJson(data, lat: loc.lat, lng: loc.lng);
 });
 
 /// Full kitchen detail (header, hours, ratings, rating summary).

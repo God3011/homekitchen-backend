@@ -24,7 +24,6 @@ String _humanDate(DateTime d) {
   return '${d.day} ${months[d.month - 1]} ${d.year}';
 }
 
-String _rupees(int paise) => '₹${(paise / 100).toStringAsFixed(0)}';
 
 /// The date the Menu screen is currently viewing.
 final menuDateProvider = StateProvider<DateTime>((_) => _today());
@@ -241,7 +240,7 @@ class _PastView extends StatelessWidget {
               leading: _Thumb(url: d.photoUrl),
               title: Text(d.name),
               subtitle: Text(
-                '${_rupees(d.pricePaise)}  ·  '
+                '${formatPaise(d.pricePaise)}  ·  '
                 '${d.platesSold} sold of ${d.platesTotal}  ·  '
                 '${d.platesRemaining} left',
               ),
@@ -401,7 +400,7 @@ class _OnMenuCard extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    Text(_rupees(dish.pricePaise),
+                    Text(formatPaise(dish.pricePaise),
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.outline)),
                   ],
@@ -496,7 +495,7 @@ class _OffMenuCard extends ConsumerWidget {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(_rupees(dish.pricePaise),
+                    Text(formatPaise(dish.pricePaise),
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.outline)),
                   ],

@@ -27,14 +27,6 @@ export class SetKitchenHoursDto {
   hours: KitchenHoursEntry[];
 }
 
-export class UploadDocumentDto {
-  @IsEnum(DocType)
-  docType: DocType;
-
-  @IsString()
-  fileUrl: string;
-}
-
 // Multipart upload — the file comes via @UploadedFile, only docType in the body.
 export class UploadDocFileDto {
   @IsEnum(DocType)

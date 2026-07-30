@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
+import '../providers/auth_provider.dart';
 import '../providers/orders_provider.dart';
-import '../widgets/status_badge.dart';
 import 'kitchen_detail_screen.dart';
 import 'order_tracking_screen.dart';
 
@@ -94,6 +94,12 @@ class _OrderTile extends ConsumerWidget {
                       trackEvent('reorder_tapped', {
                         'original_order_id': order.id,
                         'kitchen_id': order.kitchenId,
+                      });
+                      // Reorder opens the kitchen page too — track the profile
+                      // view here so this path isn't a blind spot vs. discovery.
+                      trackEvent('kitchen_profile_viewed', {
+                        'kitchen_id': order.kitchenId,
+                        'zone_id': ref.read(activeZoneIdProvider),
                       });
                       Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) =>

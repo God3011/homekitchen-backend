@@ -18,13 +18,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loading = false;
   String? _error;
 
+  // Session-level guard: fire `seller_signup_started` once per genuine signup
+  // start, even if the login screen is rebuilt or re-inserted in this session.
+  static bool _signupStartTracked = false;
+
   @override
   void initState() {
     super.initState();
-    trackEvent('seller_signup_started', {
-      'language_selected': 'en',
-      'referral_source': 'organic',
-    });
+    if (!_signupStartTracked) {
+      _signupStartTracked = true;
+      trackEvent('seller_signup_started', {
+        // Actual device/app locale, not a hardcoded value.
+        'language_selected':
+            WidgetsBinding.instance.platformDispatcher.locale.languageCode,
+        // No attribution SDK yet — we don't know the real source.
+        'referral_source': 'unknown',
+      });
+    }
   }
 
   @override

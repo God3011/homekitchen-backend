@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared/shared.dart';
 
-import 'status_badge.dart';
 
 class OrderCard extends StatelessWidget {
   final Order order;
@@ -49,7 +48,7 @@ class OrderCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          StatusBadge(status: order.status),
+                          StatusBadge(status: order.status, seller: true),
                         ],
                       ),
                       const SizedBox(height: 6),

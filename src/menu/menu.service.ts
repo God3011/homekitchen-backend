@@ -7,12 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
-import {
-  CreateCategoryDto,
-  UpdateCategoryDto,
-  SetAvailabilityDto,
-  SetPreferencesDto,
-} from './dto/menu-actions.dto';
+import { SetPreferencesDto } from './dto/menu-actions.dto';
 import { SaveDailyMenuDto } from './dto/daily-menu.dto';
 import { StorageService, UploadFile } from '../storage/storage.service';
 import {
@@ -39,61 +34,8 @@ export class MenuService {
     });
   }
 
-  // ── Categories ───────────────────────────────────────────────────────
-  createCategory(kitchenId: string, dto: CreateCategoryDto) {
-    return this.prisma.menuCategory.create({
-      data: { kitchenId, name: dto.name, sortOrder: dto.sortOrder ?? 0 },
-    });
-  }
-
-  listCategories(kitchenId: string) {
-    return this.prisma.menuCategory.findMany({
-      where: { kitchenId },
-      orderBy: { sortOrder: 'asc' },
-      include: { items: { where: { isActive: true } } },
-    });
-  }
-
-  async updateCategory(
-    kitchenId: string,
-    categoryId: string,
-    dto: UpdateCategoryDto,
-  ) {
-    await this.ownsCategory(kitchenId, categoryId);
-    return this.prisma.menuCategory.update({
-      where: { id: categoryId },
-      data: dto,
-    });
-  }
-
-  async deleteCategory(kitchenId: string, categoryId: string) {
-    await this.ownsCategory(kitchenId, categoryId);
-    // Orphan items rather than deleting them
-    await this.prisma.menuItem.updateMany({
-      where: { categoryId },
-      data: { categoryId: null },
-    });
-    return this.prisma.menuCategory.delete({ where: { id: categoryId } });
-  }
-
-  private async ownsCategory(kitchenId: string, categoryId: string) {
-    const cat = await this.prisma.menuCategory.findUnique({
-      where: { id: categoryId },
-    });
-    if (!cat) throw new NotFoundException('Category not found.');
-    if (cat.kitchenId !== kitchenId) {
-      throw new ForbiddenException(
-        'This category does not belong to your kitchen.',
-      );
-    }
-  }
-
   // ── Menu items ───────────────────────────────────────────────────────
   async createItem(kitchenId: string, dto: CreateMenuItemDto) {
-    if (dto.categoryId) {
-      await this.ownsCategory(kitchenId, dto.categoryId);
-    }
-
     const config = await this.prisma.platformConfig.findUniqueOrThrow({ where: { id: 1 } });
     if (dto.pricePaise > config.itemPriceCapPaise) {
       throw new BadRequestException(
@@ -104,7 +46,6 @@ export class MenuService {
     return this.prisma.menuItem.create({
       data: {
         kitchenId,
-        categoryId: dto.categoryId,
         name: dto.name,
         pricePaise: dto.pricePaise,
         photoUrl: dto.photoUrl,
@@ -126,9 +67,6 @@ export class MenuService {
     dto: UpdateMenuItemDto,
   ) {
     await this.ownsItem(kitchenId, itemId);
-    if (dto.categoryId) {
-      await this.ownsCategory(kitchenId, dto.categoryId);
-    }
 
     if (dto.pricePaise !== undefined) {
       const config = await this.prisma.platformConfig.findUniqueOrThrow({ where: { id: 1 } });
@@ -157,36 +95,8 @@ export class MenuService {
   listItems(kitchenId: string) {
     return this.prisma.menuItem.findMany({
       where: { kitchenId },
-      include: { preferences: true, category: true },
+      include: { preferences: true },
       orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  // ── Daily availability ───────────────────────────────────────────────
-  async setAvailability(
-    kitchenId: string,
-    itemId: string,
-    dto: SetAvailabilityDto,
-  ) {
-    await this.ownsItem(kitchenId, itemId);
-    const serviceDate = parseServiceDate(dto.serviceDate);
-
-    return this.prisma.menuDailyAvailability.upsert({
-      where: {
-        menuItemId_serviceDate: { menuItemId: itemId, serviceDate },
-      },
-      create: {
-        menuItemId: itemId,
-        serviceDate,
-        platesTotal: dto.platesTotal,
-        platesRemaining: dto.platesTotal,
-        isAvailable: dto.isAvailable ?? true,
-      },
-      update: {
-        platesTotal: dto.platesTotal,
-        platesRemaining: dto.platesTotal,
-        isAvailable: dto.isAvailable ?? true,
-      },
     });
   }
 
@@ -369,30 +279,15 @@ export class MenuService {
     // how OrdersService reads them, so the customer sees today's stock.
     const serviceDate = istServiceDate();
 
-    const [categories, uncategorized] = await Promise.all([
-      this.prisma.menuCategory.findMany({
-        where: { kitchenId },
-        orderBy: { sortOrder: 'asc' },
-        include: {
-          items: {
-            where: { isActive: true },
-            include: {
-              preferences: true,
-              availability: { where: { serviceDate } },
-            },
-          },
-        },
-      }),
-      this.prisma.menuItem.findMany({
-        where: { kitchenId, isActive: true, categoryId: null },
-        include: {
-          preferences: true,
-          availability: { where: { serviceDate } },
-        },
-      }),
-    ]);
+    const uncategorized = await this.prisma.menuItem.findMany({
+      where: { kitchenId, isActive: true },
+      include: {
+        preferences: true,
+        availability: { where: { serviceDate } },
+      },
+    });
 
-    return { categories, uncategorized };
+    return { uncategorized };
   }
 
   private async ownsItem(kitchenId: string, itemId: string) {

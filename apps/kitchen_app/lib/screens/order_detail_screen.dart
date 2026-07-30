@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
 import '../providers/kitchen_provider.dart';
-import '../widgets/status_badge.dart';
 
 /// Provider that fetches a single order by ID.
 final orderDetailProvider =
@@ -52,7 +51,7 @@ class _OrderDetailBody extends ConsumerWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 12),
-            StatusBadge(status: order.status),
+            StatusBadge(status: order.status, seller: true),
           ],
         ),
         const SizedBox(height: 4),
@@ -262,7 +261,15 @@ class _OrderDetailBody extends ConsumerWidget {
       if (reason.isNotEmpty) 'reason': reason,
     });
 
-    trackEvent('order_rejected', {'order_id': order.id});
+    // Mirror order_accepted: response_time is measured from when the order was
+    // placed, since a rejection is also a response to the incoming order.
+    final responseTime =
+        DateTime.now().difference(order.placedAt).inSeconds;
+    trackEvent('order_rejected', {
+      'order_id': order.id,
+      'response_time_seconds': responseTime,
+      'reason': reason,
+    });
 
     ref.invalidate(orderDetailProvider(order.id));
     ref.invalidate(ordersProvider(null));

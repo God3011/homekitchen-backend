@@ -7,12 +7,7 @@ import { MenuService } from './menu.service';
 import { UploadFile } from '../storage/storage.service';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
-import {
-  CreateCategoryDto,
-  UpdateCategoryDto,
-  SetAvailabilityDto,
-  SetPreferencesDto,
-} from './dto/menu-actions.dto';
+import { SetPreferencesDto } from './dto/menu-actions.dto';
 import { SaveDailyMenuDto } from './dto/daily-menu.dto';
 import { CurrentUser, RequestUser } from '../auth/decorators';
 import { Roles } from '../auth/roles.guard';
@@ -20,41 +15,6 @@ import { Roles } from '../auth/roles.guard';
 @Controller('menu')
 export class MenuController {
   constructor(private readonly menu: MenuService) {}
-
-  // --- Seller: categories ---
-  @Roles('kitchen')
-  @Post('categories')
-  createCategory(
-    @CurrentUser() user: RequestUser,
-    @Body() dto: CreateCategoryDto,
-  ) {
-    return this.menu.createCategory(user.userId, dto);
-  }
-
-  @Roles('kitchen')
-  @Get('categories')
-  listCategories(@CurrentUser() user: RequestUser) {
-    return this.menu.listCategories(user.userId);
-  }
-
-  @Roles('kitchen')
-  @Patch('categories/:id')
-  updateCategory(
-    @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
-    @Body() dto: UpdateCategoryDto,
-  ) {
-    return this.menu.updateCategory(user.userId, id, dto);
-  }
-
-  @Roles('kitchen')
-  @Delete('categories/:id')
-  deleteCategory(
-    @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
-  ) {
-    return this.menu.deleteCategory(user.userId, id);
-  }
 
   // --- Seller: items ---
   @Roles('kitchen')
@@ -121,16 +81,6 @@ export class MenuController {
     @Body() dto: SaveDailyMenuDto,
   ) {
     return this.menu.saveDailyMenu(user.userId, dto);
-  }
-
-  @Roles('kitchen')
-  @Put('items/:id/availability')
-  setAvailability(
-    @CurrentUser() user: RequestUser,
-    @Param('id') id: string,
-    @Body() dto: SetAvailabilityDto,
-  ) {
-    return this.menu.setAvailability(user.userId, id, dto);
   }
 
   @Roles('kitchen')

@@ -7,7 +7,6 @@ import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
-import '../widgets/address_picker.dart';
 
 /// Edit the kitchen's text profile fields (PATCH /kitchens/me).
 class EditProfileScreen extends ConsumerStatefulWidget {
@@ -236,6 +235,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 Text('Address', style: Theme.of(context).textTheme.titleSmall),
           ),
           AddressPicker(
+            api: ref.read(apiClientProvider),
+            userAgentPackageName: 'com.homely.kitchen_app',
             initialLat: widget.kitchen.lat,
             initialLng: widget.kitchen.lng,
             initialAddress: widget.kitchen.addressLine,

@@ -69,25 +69,6 @@ class Kitchen {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'kitchenName': kitchenName,
-      'cookName': cookName,
-      'cookPhotoUrl': cookPhotoUrl,
-      'kitchenPhotoUrls': kitchenPhotoUrls,
-      'phone': phone,
-      'status': status,
-      'zoneId': zoneId,
-      'addressLine': addressLine,
-      'lat': lat,
-      'lng': lng,
-      'story': story,
-      'signatureDish': signatureDish,
-      'verifiedAt': verifiedAt?.toIso8601String(),
-      'createdAt': createdAt.toIso8601String(),
-    };
-  }
 
   @override
   String toString() => 'Kitchen(id: $id, kitchenName: $kitchenName)';

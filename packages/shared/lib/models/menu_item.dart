@@ -11,9 +11,6 @@ class MenuItemPreference {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {'preference': preference};
-  }
 }
 
 /// MenuItem model — mirrors the backend MenuItem entity.
@@ -22,7 +19,6 @@ class MenuItem {
   final String id;
   final String kitchenId;
   final String name;
-  final String? categoryId;
   final int pricePaise;
   final String? photoUrl;
   final bool isVeg;
@@ -33,7 +29,6 @@ class MenuItem {
     required this.id,
     required this.kitchenId,
     required this.name,
-    this.categoryId,
     required this.pricePaise,
     this.photoUrl,
     this.isVeg = true,
@@ -46,7 +41,6 @@ class MenuItem {
       id: json['id'] as String,
       kitchenId: json['kitchenId'] as String,
       name: json['name'] as String,
-      categoryId: json['categoryId'] as String?,
       pricePaise: json['pricePaise'] as int,
       photoUrl: json['photoUrl'] as String?,
       isVeg: json['isVeg'] as bool? ?? true,
@@ -59,19 +53,6 @@ class MenuItem {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'kitchenId': kitchenId,
-      'name': name,
-      'categoryId': categoryId,
-      'pricePaise': pricePaise,
-      'photoUrl': photoUrl,
-      'isVeg': isVeg,
-      'isActive': isActive,
-      'preferences': preferences.map((e) => e.toJson()).toList(),
-    };
-  }
 
   @override
   String toString() => 'MenuItem(id: $id, name: $name, pricePaise: $pricePaise)';

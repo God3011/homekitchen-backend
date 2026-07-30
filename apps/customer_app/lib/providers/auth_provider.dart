@@ -25,3 +25,10 @@ final customerProfileProvider = FutureProvider<Customer?>((ref) async {
     return null;
   }
 });
+
+/// The customer's active analytics zone id (empty string when unknown), for
+/// stamping onto discovery analytics events. Zones are a passive analytics
+/// label — the customer's home zone is the best available active zone.
+final activeZoneIdProvider = Provider<String>((ref) {
+  return ref.watch(customerProfileProvider).valueOrNull?.homeZoneId ?? '';
+});

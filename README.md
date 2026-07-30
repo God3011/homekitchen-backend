@@ -87,9 +87,10 @@ All modules below are fully built and tested.
 - **Discovery** — `GET /api/kitchens` (customer-facing, optional `?zoneId=`).
 
 ### Menu (`src/menu/`)
-- Categories (CRUD), menu items (CRUD with per-item ₹200 price cap enforcement).
+- Menu items (CRUD with per-item ₹200 price cap enforcement).
 - Per-item preference toggles (spice level, no-onion, etc.).
-- Daily plate availability (`PUT /api/menu/items/:id/availability`).
+- Daily menu / plate counts (`GET` + `PUT /api/menu/daily`) — the only write path
+  for availability.
 - Customer-facing menu: `GET /api/menu/kitchens/:kitchenId`.
 
 ### Orders (`src/orders/`)

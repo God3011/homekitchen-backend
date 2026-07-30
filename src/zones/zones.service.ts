@@ -5,46 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ZonesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list() {
-    return this.prisma.zone.findMany({
-      where: { isActive: true },
-      orderBy: { name: 'asc' },
-    });
-  }
-
-  /**
-   * Read-only preview of the zone label a point falls in: the active zone that
-   * contains it, or a placeholder (`id: null`) when none does. Zones are passive
-   * labels — nothing is ever created. Callers just show `name`.
-   */
-  async resolveNearest(lat: number, lng: number) {
-    const zones = await this.prisma.zone.findMany({ where: { isActive: true } });
-    let containing: (typeof zones)[number] | null = null;
-    let best = Infinity;
-    for (const z of zones) {
-      const d = this.haversineM(lat, lng, z.centerLat, z.centerLng);
-      if (d <= z.radiusM && d < best) {
-        best = d;
-        containing = z;
-      }
-    }
-    if (containing) return { ...containing, withinRadius: true };
-
-    return {
-      id: null,
-      name: this.newZoneName(lat, lng),
-      centerLat: lat,
-      centerLng: lng,
-      radiusM: 5000,
-      isActive: true,
-      withinRadius: false,
-    };
-  }
-
-  private newZoneName(lat: number, lng: number): string {
-    return `Area ${lat.toFixed(3)}, ${lng.toFixed(3)}`;
-  }
-
   /**
    * The id of the active zone that *contains* the point (nearest, within its
    * radius), or null when the point falls outside every zone. Zones are passive
@@ -56,7 +16,7 @@ export class ZonesService {
     let containingId: string | null = null;
     let best = Infinity;
     for (const z of zones) {
-      const d = this.haversineM(lat, lng, z.centerLat, z.centerLng);
+      const d = this.distanceM(lat, lng, z.centerLat, z.centerLng);
       if (d <= z.radiusM && d < best) {
         best = d;
         containingId = z.id;
@@ -65,18 +25,8 @@ export class ZonesService {
     return containingId;
   }
 
-  /** Public great-circle distance between two lat/lng points, in metres. */
-  distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    return this.haversineM(lat1, lng1, lat2, lng2);
-  }
-
   /** Great-circle distance between two lat/lng points, in metres. */
-  private haversineM(
-    lat1: number,
-    lng1: number,
-    lat2: number,
-    lng2: number,
-  ): number {
+  distanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R = 6371000;
     const toRad = (d: number) => (d * Math.PI) / 180;
     const dLat = toRad(lat2 - lat1);

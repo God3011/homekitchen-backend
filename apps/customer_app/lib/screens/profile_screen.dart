@@ -4,8 +4,6 @@ import 'package:shared/shared.dart';
 
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
-import '../services/push_service.dart';
-import '../widgets/address_picker.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -165,7 +163,11 @@ class _EditLocationScreenState extends ConsumerState<_EditLocationScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          AddressPicker(onChanged: (r) => setState(() => _addr = r)),
+          AddressPicker(
+            api: ref.read(apiClientProvider),
+            userAgentPackageName: 'com.homely.customer_app',
+            onChanged: (r) => setState(() => _addr = r),
+          ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: (_addr == null || _saving) ? null : _save,

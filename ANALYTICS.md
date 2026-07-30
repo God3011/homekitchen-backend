@@ -37,13 +37,15 @@ auto-captured by the SDK; no code needed.
 | search_performed | dish/kitchen search | query, zone_id, result_count |
 | item_added_to_cart | item added | item_id, kitchen_id, price, preferences |
 | checkout_started | checkout opened | cart_value, item_count, kitchen_id |
-| fulfillment_type_selected | pickup/delivery chosen | order_type, delivery_fee |
-| order_placed | order placed (purchase) | order_id, value, currency, kitchen_id, order_type |
+| fulfillment_type_selected | _deferred — no fulfillment selector until delivery ships in v2 (v1 is pickup-only)_ | order_type, delivery_fee |
+| order_placed | order placed (purchase — fires only AFTER payment is confirmed) | order_id, value, currency, kitchen_id, order_type |
 | call_kitchen_tapped | Call Kitchen tapped | order_id, kitchen_id |
 | order_completed | picked up | order_id, completion_time, order_type |
 | rating_submitted | rating given | order_id, kitchen_id, rating_value |
 | reorder_tapped | re-order from history | original_order_id, kitchen_id |
 | push_notification_opened | notif opened | notification_type, campaign_id |
+| address_added | saved location added | set_active |
+| address_switched | active saved location changed | address_id |
 
 ## Seller App events
 | Event | Fires when | Key params |

@@ -26,7 +26,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     // Register this device for order/stock push alerts (user is signed in here).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      registerDeviceToken(ref.read(apiClientProvider));
+      registerDeviceTokenForApp(ref.read(apiClientProvider));
     });
   }
 
@@ -152,7 +152,7 @@ class _DashboardPage extends ConsumerWidget {
                               .headlineMedium
                               ?.copyWith(fontWeight: FontWeight.w700)),
                       data: (s) => Text(
-                        '₹${(s.netEarningsPaise / 100).toStringAsFixed(0)}',
+                        formatPaise(s.netEarningsPaise),
                         style: Theme.of(context)
                             .textTheme
                             .headlineMedium

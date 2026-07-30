@@ -4,7 +4,6 @@ import 'package:shared/shared.dart';
 
 import '../providers/api_provider.dart';
 import '../providers/auth_provider.dart';
-import '../widgets/address_picker.dart';
 
 /// First-run profile setup: name + home location → POST /customers/signup.
 /// Shown by the auth gate when the user is signed in but has no Customer row.
@@ -106,7 +105,11 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
-          AddressPicker(onChanged: (r) => setState(() => _addr = r)),
+          AddressPicker(
+            api: ref.read(apiClientProvider),
+            userAgentPackageName: 'com.homely.customer_app',
+            onChanged: (r) => setState(() => _addr = r),
+          ),
           const SizedBox(height: 32),
           ElevatedButton(
             onPressed: _loading ? null : _submit,

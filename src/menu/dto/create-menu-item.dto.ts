@@ -1,15 +1,11 @@
 import {
-  IsString, IsOptional, IsInt, IsBoolean, IsUUID, Min, IsArray, IsEnum,
+  IsString, IsOptional, IsInt, IsBoolean, Min, IsArray, IsEnum,
 } from 'class-validator';
 import { PreferenceType } from '@prisma/client';
 
 export class CreateMenuItemDto {
   @IsString()
   name: string;
-
-  @IsOptional()
-  @IsUUID()
-  categoryId?: string;
 
   @IsInt()
   @Min(1)

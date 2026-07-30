@@ -18,7 +18,6 @@ import { UpdateKitchenDto } from './dto/update-kitchen.dto';
 import {
   SetDailyStatusDto,
   SetKitchenHoursDto,
-  UploadDocumentDto,
 } from './dto/kitchen-actions.dto';
 import { StorageService, UploadFile } from '../storage/storage.service';
 import { ZonesService } from '../zones/zones.service';
@@ -33,6 +32,14 @@ import {
 } from '../common/service-date';
 
 export type EarningsPeriod = 'today' | 'week' | 'month' | 'all';
+
+/** Inclusive lookback window (days) per period; null = all-time. */
+const LOOKBACK_DAYS: Record<EarningsPeriod, number | null> = {
+  today: 0,
+  week: 6, // today + previous 6 = 7 days
+  month: 29, // today + previous 29 = 30 days
+  all: null,
+};
 
 /** Photo files submitted with the multipart signup request. */
 export interface SignupFiles {
@@ -159,16 +166,6 @@ export class KitchensService {
   }
 
   // ── Documents ────────────────────────────────────────────────────────
-  uploadDocument(kitchenId: string, dto: UploadDocumentDto) {
-    return this.prisma.kitchenDocument.create({
-      data: {
-        kitchenId,
-        docType: dto.docType,
-        fileUrl: dto.fileUrl,
-      },
-    });
-  }
-
   /** Multipart doc upload: pushes the file to R2, then records the URL. */
   async uploadDocumentFile(
     kitchenId: string,
@@ -286,20 +283,6 @@ export class KitchensService {
   // integer paise. v1 payouts are SCHEDULED (manual UPI) — there is no
   // self-serve withdraw; pending balance is lifetime net minus payouts recorded.
 
-  /** Inclusive lookback window (days) for a period; null = all-time. */
-  private periodDaysAgo(period: EarningsPeriod): number | null {
-    switch (period) {
-      case 'today':
-        return 0;
-      case 'week':
-        return 6; // today + previous 6 = 7 days
-      case 'month':
-        return 29; // today + previous 29 = 30 days
-      case 'all':
-        return null;
-    }
-  }
-
   /** Net earnings (completed gross − charged daily fees) across ALL time. */
   private async lifetimeNetPaise(kitchenId: string): Promise<number> {
     const config = await this.prisma.platformConfig.findUniqueOrThrow({
@@ -335,7 +318,7 @@ export class KitchensService {
     const config = await this.prisma.platformConfig.findUniqueOrThrow({
       where: { id: 1 },
     });
-    const daysAgo = this.periodDaysAgo(period);
+    const daysAgo = LOOKBACK_DAYS[period];
 
     // Completed-order gross + count within the period (IST day boundaries).
     const orderWhere =

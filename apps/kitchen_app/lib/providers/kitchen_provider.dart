@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared/shared.dart';
 
-import '../config.dart';
 
 final apiClientProvider = Provider<ApiClient>((_) {
   return ApiClient(baseUrl: apiBaseUrl, appRole: 'kitchen');

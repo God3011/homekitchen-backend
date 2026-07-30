@@ -22,7 +22,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     // Register this device for order-status push alerts (user is signed in).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      registerDeviceToken(ref.read(apiClientProvider));
+      registerDeviceTokenForApp(ref.read(apiClientProvider));
     });
   }
 

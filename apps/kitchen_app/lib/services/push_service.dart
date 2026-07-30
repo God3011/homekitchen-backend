@@ -1,123 +1,66 @@
+import 'dart:typed_data';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared/shared.dart';
 
-/// Push notifications for the seller app.
+/// Seller-app half of push: how each order/stock event is worded, and how loudly
+/// it announces itself. All the plumbing (channel setup, local rendering, token
+/// registration) lives in shared.
 ///
-/// The backend sends **DATA-only** FCM messages (no `notification` key) so
-/// budget Android OEMs don't drop them — which means Android won't auto-display
-/// anything. We therefore render each message ourselves with a local
-/// notification, both in the foreground and (via the background handler) when
-/// the app is backgrounded or killed.
-
-const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-  'homely_orders',
-  'Order & stock alerts',
-  description: 'New orders and low-stock / sold-out alerts',
-  importance: Importance.high,
-);
-
-final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
-
-const _androidDetails = AndroidNotificationDetails(
-  'homely_orders',
-  'Order & stock alerts',
+/// A seller who misses a "new order" ping loses the order, so this channel is
+/// deliberately aggressive: a custom chime played on the ALARM stream (audible
+/// even with the ringer down), max importance for a heads-up banner, and a
+/// double-buzz vibration.
+///
+/// The channel id carries a version suffix on purpose. Android freezes a
+/// channel's sound/importance/vibration the first time that id is created, so
+/// changing any of them below requires bumping `_v2` — otherwise every existing
+/// install keeps the old, quieter alert.
+final kitchenPush = PushConfig(
+  channelId: 'homely_orders_v2',
+  channelName: 'Order & stock alerts',
   channelDescription: 'New orders and low-stock / sold-out alerts',
-  importance: Importance.high,
-  priority: Priority.high,
+  deviceInfo: 'kitchen-android',
+  importance: Importance.max,
+  sound: const RawResourceAndroidNotificationSound('order_alert'),
+  audioAttributesUsage: AudioAttributesUsage.alarm,
+  vibrationPattern: Int64List.fromList(const [0, 600, 250, 600]),
+  text: (data) {
+    if (data['type'] == 'stock_alert') {
+      return (
+        title: 'Stock alert',
+        body: (data['message'] ?? 'Check your plate counts.').toString(),
+      );
+    }
+    switch (data['event']) {
+      case 'received':
+        return (title: 'New order! 🎉', body: 'You have a new order — tap to view.');
+      case 'cancelled':
+        return (title: 'Order cancelled', body: 'A customer cancelled their order.');
+      case 'customer_en_route':
+        return (title: 'Customer on the way', body: 'They are heading over for pickup.');
+      case 'customer_arrived':
+        return (title: 'Customer arrived', body: 'The customer is here for pickup.');
+      default:
+        return (title: 'Order update', body: 'Tap to view your orders.');
+    }
+  },
 );
 
-/// Turn a DATA-only payload into a (title, body) pair.
-({String title, String body}) _text(Map<String, dynamic> data) {
-  if (data['type'] == 'stock_alert') {
-    return (
-      title: 'Stock alert',
-      body: (data['message'] ?? 'Check your plate counts.').toString(),
-    );
-  }
-  switch (data['event']) {
-    case 'received':
-      return (title: 'New order! 🎉', body: 'You have a new order — tap to view.');
-    case 'cancelled':
-      return (title: 'Order cancelled', body: 'A customer cancelled their order.');
-    case 'customer_en_route':
-      return (title: 'Customer on the way', body: 'They are heading over for pickup.');
-    case 'customer_arrived':
-      return (title: 'Customer arrived', body: 'The customer is here for pickup.');
-    default:
-      return (title: 'Order update', body: 'Tap to view your orders.');
-  }
-}
-
-Future<void> _show(RemoteMessage message) async {
-  final t = _text(message.data);
-  await _local.show(
-    message.hashCode,
-    t.title,
-    t.body,
-    const NotificationDetails(android: _androidDetails),
-  );
-}
-
-/// Background / terminated handler — MUST be a top-level function.
+/// Background / terminated handler — MUST be a top-level function, and must stay
+/// in the app: it runs in a fresh isolate with none of `main()`'s state.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  await _initLocal();
-  await _show(message);
-}
-
-Future<void> _initLocal() async {
-  const init = InitializationSettings(
-    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-  );
-  await _local.initialize(init);
-  await _local
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(_channel);
+  await showPush(kitchenPush, message);
 }
 
 /// Call once from `main()` after `Firebase.initializeApp()`.
-Future<void> initPush() async {
-  await _initLocal();
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  await FirebaseMessaging.instance.requestPermission();
-  await _local
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.requestNotificationsPermission();
-  FirebaseMessaging.onMessage.listen(_show);
-}
+Future<void> initPushForApp() =>
+    initPush(kitchenPush, firebaseMessagingBackgroundHandler);
 
-/// Register this device's FCM token with the backend. Call once the user is
-/// signed in (the ApiClient auto-attaches their Firebase bearer token).
-Future<void> registerDeviceToken(ApiClient api) async {
-  Future<void> send(String token) async {
-    try {
-      await api.post('/notifications/device-tokens',
-          body: {'fcmToken': token, 'deviceInfo': 'kitchen-android'});
-      debugPrint('FCM token registered');
-    } catch (e) {
-      debugPrint('FCM token registration failed: $e');
-    }
-  }
-
-  final token = await FirebaseMessaging.instance.getToken();
-  if (token != null) await send(token);
-  FirebaseMessaging.instance.onTokenRefresh.listen(send);
-}
-
-/// Remove this device's token (call on logout, while still authenticated).
-Future<void> unregisterDeviceToken(ApiClient api) async {
-  final token = await FirebaseMessaging.instance.getToken();
-  if (token != null) {
-    try {
-      await api.post('/notifications/device-tokens/remove',
-          body: {'fcmToken': token});
-    } catch (_) {/* best-effort */}
-  }
-  await FirebaseMessaging.instance.deleteToken();
-}
+/// Register this device's FCM token with the backend.
+Future<void> registerDeviceTokenForApp(ApiClient api) =>
+    registerDeviceToken(api, kitchenPush);

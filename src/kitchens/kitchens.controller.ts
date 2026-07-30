@@ -26,7 +26,6 @@ import {
   SetDailyStatusDto,
   SetKitchenHoursDto,
   UploadDocFileDto,
-  UploadDocumentDto,
 } from './dto/kitchen-actions.dto';
 import { CurrentUser, Public, RequestUser } from '../auth/decorators';
 import { Roles } from '../auth/roles.guard';
@@ -71,15 +70,6 @@ export class KitchensController {
     @Body() dto: UpdateKitchenDto,
   ) {
     return this.kitchens.updateProfile(user.userId, dto);
-  }
-
-  @Roles('kitchen')
-  @Post('me/documents')
-  uploadDocument(
-    @CurrentUser() user: RequestUser,
-    @Body() dto: UploadDocumentDto,
-  ) {
-    return this.kitchens.uploadDocument(user.userId, dto);
   }
 
   // multipart: `file` (image of the doc) + `docType` field. Uploads to R2.

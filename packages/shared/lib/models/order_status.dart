@@ -18,7 +18,4 @@ enum OrderStatus {
       orElse: () => throw ArgumentError('Unknown OrderStatus: $value'),
     );
   }
-
-  /// Serialize to the snake_case string the API expects.
-  String toJson() => name;
 }

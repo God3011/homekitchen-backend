@@ -46,13 +46,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       });
       final orderId = orderRes['id'] as String;
 
-      trackEvent('order_placed', {
-        'order_id': orderId,
-        'value': cart.grandTotalPaise,
-        'currency': 'INR',
-        'kitchen_id': cart.kitchenId,
-        'order_type': 'pickup',
-      });
+      // NOTE: `order_placed` is a purchase event — it fires only AFTER payment
+      // is confirmed (below), never here. Firing before payment would count
+      // abandoned/failed checkouts as purchases.
 
       // 2. Create the Razorpay order.
       final rp = await api
@@ -100,6 +96,16 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         ));
         return;
       }
+
+      // Paid → payment confirmed server-side (verify + webhook backstop).
+      // This is the only place `order_placed` fires.
+      trackEvent('order_placed', {
+        'order_id': orderId,
+        'value': cart.grandTotalPaise,
+        'currency': 'INR',
+        'kitchen_id': cart.kitchenId,
+        'order_type': 'pickup',
+      });
 
       // Paid → show the live order.
       _goToTracking(orderId);

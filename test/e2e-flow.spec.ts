@@ -144,13 +144,6 @@ class MockStorageService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** The "YYYY-MM-DD" the backend treats as today — IST calendar day. Mirrors
- *  OrdersService.serviceDate() / KitchensService.list(), which now resolve the
- *  service day in Asia/Kolkata (see src/common/service-date). */
-function todayDateStr(): string {
-  return istTodayStr();
-}
-
 /** Create / drop the test database via a throw-away PrismaClient aimed at
  *  the default "postgres" database. */
 async function adminExec(sql: string) {
@@ -182,10 +175,27 @@ describe('E2E: Full order lifecycle', () => {
   let kitchenId: string;
   let customerId: string;
   let customer2Id: string;
-  let categoryId: string;
   let menuItemId: string;
   let orderId: string;
   let handoverCode: string;
+
+  /**
+   * Reset today's stock for the test dish to exactly N plates, via the same
+   * daily-menu endpoint the seller app ships. The row is cleared before being
+   * re-added so remaining == total — a bare upsert deliberately preserves
+   * plates already sold today. Returns the dish as the daily-menu screen sees it.
+   */
+  const setPlates = async (platesTotal: number) => {
+    const put = (body: object) =>
+      request(app.getHttpServer())
+        .put('/api/menu/daily')
+        .set('Authorization', 'Bearer kitchen-test-token')
+        .send(body)
+        .expect(200);
+    await put({ removals: [menuItemId] });
+    const res = await put({ upserts: [{ menuItemId, platesTotal }] });
+    return res.body.dishes.find((d: any) => d.menuItemId === menuItemId);
+  };
 
   // ── Global setup ──────────────────────────────────────────────────────
   beforeAll(async () => {
@@ -310,24 +320,12 @@ describe('E2E: Full order lifecycle', () => {
   // =====================================================================
   // Step 3 — Kitchen sets up menu, preferences, availability, hours, toggle
   // =====================================================================
-  it('3a. Kitchen creates a menu category', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/api/menu/categories')
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ name: 'South Indian', sortOrder: 1 })
-      .expect(201);
-
-    categoryId = res.body.id;
-    expect(res.body.name).toBe('South Indian');
-  });
-
   it('3b. Kitchen creates a menu item (₹150) with initial preferences', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/menu/items')
       .set('Authorization', 'Bearer kitchen-test-token')
       .send({
         name: 'Hyderabadi Biryani',
-        categoryId,
         pricePaise: 15000,
         preferences: ['less_spicy', 'extra_rice'],
       })
@@ -350,21 +348,17 @@ describe('E2E: Full order lifecycle', () => {
   });
 
   it('3d. Kitchen sets daily plate availability (20 plates)', async () => {
-    const res = await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    const dish = await setPlates(20);
 
-    expect(res.body.platesTotal).toBe(20);
-    expect(res.body.platesRemaining).toBe(20);
+    expect(dish.platesTotal).toBe(20);
+    expect(dish.platesRemaining).toBe(20);
   });
 
   it('3e. Kitchen toggles "Cooking Today" ON', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/kitchens/me/daily-status')
       .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), isCooking: true })
+      .send({ serviceDate: istTodayStr(), isCooking: true })
       .expect(201);
 
     expect(res.body.isCooking).toBe(true);
@@ -463,7 +457,6 @@ describe('E2E: Full order lifecycle', () => {
       .set('Authorization', 'Bearer kitchen-test-token')
       .send({
         name: 'Expensive Dish',
-        categoryId,
         pricePaise: 25000, // ₹250 > ₹200 cap
       })
       .expect(400);
@@ -473,11 +466,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5b. 3 × ₹150 = ₹450 order SUCCEEDS (no cart cap)', async () => {
     // Reset plate availability to 20
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const res = await request(app.getHttpServer())
       .post('/api/orders')
@@ -496,11 +485,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5c. 5 plates requested, only 3 remain → 400 insufficient plates', async () => {
     // Set availability to 3 plates
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 3 })
-      .expect(200);
+    await setPlates(3);
 
     const res = await request(app.getHttpServer())
       .post('/api/orders')
@@ -518,11 +503,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5d. Concurrent orders for last 2 plates → exactly one 201, one 400', async () => {
     // Set availability to 2 plates
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 2 })
-      .expect(200);
+    await setPlates(2);
 
     const [r1, r2] = await Promise.all([
       request(app.getHttpServer())
@@ -551,11 +532,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5e. Reject order → platesRemaining restored + isAvailable re-enabled', async () => {
     // Set availability to 5 plates
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 5 })
-      .expect(200);
+    await setPlates(5);
 
     // Place an order for 3 plates
     const orderRes = await request(app.getHttpServer())
@@ -576,7 +553,7 @@ describe('E2E: Full order lifecycle', () => {
       where: {
         menuItemId_serviceDate: {
           menuItemId,
-          serviceDate: new Date(todayDateStr()),
+          serviceDate: new Date(istTodayStr()),
         },
       },
     });
@@ -594,7 +571,7 @@ describe('E2E: Full order lifecycle', () => {
       where: {
         menuItemId_serviceDate: {
           menuItemId,
-          serviceDate: new Date(todayDateStr()),
+          serviceDate: new Date(istTodayStr()),
         },
       },
     });
@@ -604,11 +581,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5f. Order exhausting plates → isAvailable false + sendPush called with stock_alert', async () => {
     // Set availability to exactly 2 plates
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 2 })
-      .expect(200);
+    await setPlates(2);
 
     // Spy on the mock's sendPush
     const notificationsService = app.get(NotificationsService);
@@ -632,7 +605,7 @@ describe('E2E: Full order lifecycle', () => {
       where: {
         menuItemId_serviceDate: {
           menuItemId,
-          serviceDate: new Date(todayDateStr()),
+          serviceDate: new Date(istTodayStr()),
         },
       },
     });
@@ -651,11 +624,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5g. Order bringing plates below threshold → sendPush called with low-stock warning', async () => {
     // Set availability to 5 plates (threshold defaults to 3)
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 5 })
-      .expect(200);
+    await setPlates(5);
 
     // Spy on the mock's sendPush
     const notificationsService = app.get(NotificationsService);
@@ -689,11 +658,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('5h. Valid order: correct totals, handover code, Payment row', async () => {
     // Reset plates to 20
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const res = await request(app.getHttpServer())
       .post('/api/orders')
@@ -815,11 +780,7 @@ describe('E2E: Full order lifecycle', () => {
     expect(order.payment).toBeTruthy();
 
     // An UNPAID order must NOT appear in the seller's list (payment not captured).
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
     const unpaid = await request(app.getHttpServer())
       .post('/api/orders')
       .set('Authorization', 'Bearer customer-test-token')
@@ -942,11 +903,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('9c. A different kitchen cannot act on this order → 403', async () => {
     // Place a fresh received order to act on.
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
     const fresh = await request(app.getHttpServer())
       .post('/api/orders')
       .set('Authorization', 'Bearer customer-test-token')
@@ -1084,11 +1041,7 @@ describe('E2E: Full order lifecycle', () => {
   // =====================================================================
   it('12. lifecycle pushes fire (received now waits for payment, not placement)', async () => {
     // Reset plates so the order can be placed.
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const notifications = app.get(NotificationsService);
     const spy = jest.spyOn(notifications, 'notifyOrderEvent');
@@ -1180,11 +1133,7 @@ describe('E2E: Full order lifecycle', () => {
   // Step 13 — Payments (Razorpay mocked): create → verify → webhook
   // =====================================================================
   it('13. Razorpay order created, verified, and webhook is idempotent', async () => {
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const placed = await request(app.getHttpServer())
       .post('/api/orders')
@@ -1266,11 +1215,7 @@ describe('E2E: Full order lifecycle', () => {
   // Step 14 — Unpaid orders auto-expire (plates restored); paid ones survive
   // =====================================================================
   it('14. expireUnpaidOrders cancels abandoned-payment orders and restores plates', async () => {
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const place = async (qty: number) => {
       const r = await request(app.getHttpServer())
@@ -1310,7 +1255,7 @@ describe('E2E: Full order lifecycle', () => {
       where: {
         menuItemId_serviceDate: {
           menuItemId,
-          serviceDate: new Date(todayDateStr()),
+          serviceDate: new Date(istTodayStr()),
         },
       },
     });
@@ -1333,7 +1278,7 @@ describe('E2E: Full order lifecycle', () => {
       where: {
         menuItemId_serviceDate: {
           menuItemId,
-          serviceDate: new Date(todayDateStr()),
+          serviceDate: new Date(istTodayStr()),
         },
       },
     });
@@ -1344,11 +1289,7 @@ describe('E2E: Full order lifecycle', () => {
   // Step 15 — Cancel pushes to the kitchen ONLY if it saw the order (paid)
   // =====================================================================
   it('15. Customer cancel notifies the kitchen only when the order was paid', async () => {
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const place = async () => {
       const r = await request(app.getHttpServer())
@@ -1395,11 +1336,7 @@ describe('E2E: Full order lifecycle', () => {
   // Step 16 — Payment is NOT captured for an order that's already cancelled
   // =====================================================================
   it('16. verify rejects capture on a cancelled order (no money for a dead order)', async () => {
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const placed = await request(app.getHttpServer())
       .post('/api/orders')
@@ -1440,15 +1377,11 @@ describe('E2E: Full order lifecycle', () => {
   // =====================================================================
   it('17a. Not cooking today → dormant_only + dormantReason not_cooking_today', async () => {
     // Ensure plates + hours are fine so the ONLY thing making it dormant is cooking.
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
     await request(app.getHttpServer())
       .post('/api/kitchens/me/daily-status')
       .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), isCooking: false })
+      .send({ serviceDate: istTodayStr(), isCooking: false })
       .expect(201);
 
     const res = await request(app.getHttpServer())
@@ -1473,7 +1406,7 @@ describe('E2E: Full order lifecycle', () => {
     await request(app.getHttpServer())
       .post('/api/kitchens/me/daily-status')
       .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), isCooking: true })
+      .send({ serviceDate: istTodayStr(), isCooking: true })
       .expect(201);
   });
 
@@ -1507,11 +1440,7 @@ describe('E2E: Full order lifecycle', () => {
     expect(signup.body.homeZoneId).toBeNull();
 
     // Kitchen must be serviceable: cooking (restored in 17b) + hours + plates.
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const order = await request(app.getHttpServer())
       .post('/api/orders')
@@ -1546,7 +1475,7 @@ describe('E2E: Full order lifecycle', () => {
       .set('Authorization', 'Bearer kitchen-test-token')
       .expect(200);
 
-    expect(res.body.serviceDate).toBe(todayDateStr());
+    expect(res.body.serviceDate).toBe(istTodayStr());
     expect(res.body.readOnly).toBe(false);
     const dish = res.body.dishes.find((d: any) => d.menuItemId === dailyDishId);
     expect(dish).toBeTruthy();
@@ -1561,7 +1490,7 @@ describe('E2E: Full order lifecycle', () => {
       .put('/api/menu/daily')
       .set('Authorization', 'Bearer kitchen-test-token')
       .send({
-        date: todayDateStr(),
+        date: istTodayStr(),
         upserts: [{ menuItemId: dailyDishId, platesTotal: 10, isAvailable: true }],
       })
       .expect(200);
@@ -1697,11 +1626,7 @@ describe('E2E: Full order lifecycle', () => {
 
   it('20b. A non-completed (rejected) order does NOT change the balance', async () => {
     // Ensure the kitchen is serviceable + has plates, then place a fresh order.
-    await request(app.getHttpServer())
-      .put(`/api/menu/items/${menuItemId}/availability`)
-      .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ serviceDate: todayDateStr(), platesTotal: 20 })
-      .expect(200);
+    await setPlates(20);
 
     const before = await request(app.getHttpServer())
       .get('/api/kitchens/me/earnings?period=all')
@@ -1746,7 +1671,7 @@ describe('E2E: Full order lifecycle', () => {
       .send({
         kitchenId,
         amountPaise: payAmount,
-        payoutDate: todayDateStr(),
+        payoutDate: istTodayStr(),
         note: 'Weekly UPI transfer',
       })
       .expect(201);
@@ -1778,7 +1703,7 @@ describe('E2E: Full order lifecycle', () => {
       .send({
         kitchenId,
         amountPaise: cur.body.pendingBalancePaise + 1,
-        payoutDate: todayDateStr(),
+        payoutDate: istTodayStr(),
       })
       .expect(400);
   });
@@ -1804,7 +1729,7 @@ describe('E2E: Full order lifecycle', () => {
     await request(app.getHttpServer())
       .post('/api/admin/payouts')
       .set('Authorization', 'Bearer kitchen-test-token')
-      .send({ kitchenId, amountPaise: 100, payoutDate: todayDateStr() })
+      .send({ kitchenId, amountPaise: 100, payoutDate: istTodayStr() })
       .expect(403);
   });
 

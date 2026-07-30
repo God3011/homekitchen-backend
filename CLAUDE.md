@@ -69,7 +69,7 @@ src/
 ├── prisma/                  # Global PrismaService (DB access for all modules)
 ├── auth/                    # Firebase token guard + role-based access
 ├── kitchens/                # Seller signup, profile, docs, hours, daily status
-├── menu/                    # Categories, dishes, preferences, daily availability
+├── menu/                    # Dishes, preferences, daily menu (plate counts)
 ├── orders/                  # Order placement, lifecycle transitions, cancellation
 ├── payments/                # Razorpay order creation, webhook verification
 ├── notifications/           # FCM push (high-priority DATA), WhatsApp fallback
@@ -136,7 +136,7 @@ Single source of truth: `prisma/schema.prisma` (20+ models, one `public` schema)
 | `KitchenDocument` | FSSAI / ID proof uploads for verification |
 | `KitchenHours` | Per-day operating hours (day 0–6, open/close time strings) |
 | `KitchenDailyStatus` | "Cooking Today" toggle per kitchen per date |
-| `MenuCategory` | Groups of dishes (e.g., "South Indian", "Breads") |
+| `MenuCategory` | **Unused** — no code reads or writes it. Kept only so dropping it is a deliberate migration, not a side effect |
 | `MenuItem` | Individual dishes with price in paise, active flag |
 | `MenuItemPreference` | Which preference toggles a dish offers (spice levels, no-onion, etc.) |
 | `MenuDailyAvailability` | Per-item per-day plate counts (`platesTotal`, `platesRemaining`, `isAvailable`) |
@@ -219,7 +219,7 @@ Global prefix: `/api`. All endpoints require Firebase Bearer token unless marked
 | POST | `/api/kitchens/signup` | Public (token in header) | Kitchen signup, creates kitchen from Firebase token |
 | GET | `/api/kitchens/me` | Kitchen | Get own profile |
 | PATCH | `/api/kitchens/me` | Kitchen | Update own profile |
-| POST | `/api/kitchens/me/documents` | Kitchen | Upload verification doc |
+| POST | `/api/kitchens/me/documents/upload` | Kitchen | Upload verification doc (multipart: `file` + `docType`) |
 | GET | `/api/kitchens/me/documents` | Kitchen | List own documents |
 | PUT | `/api/kitchens/me/hours` | Kitchen | Set operating hours |
 | GET | `/api/kitchens/me/hours` | Kitchen | Get own hours |
@@ -234,15 +234,12 @@ Global prefix: `/api`. All endpoints require Firebase Bearer token unless marked
 ### Menu
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/menu/categories` | Kitchen | Create category |
-| GET | `/api/menu/categories` | Kitchen | List own categories |
-| PATCH | `/api/menu/categories/:id` | Kitchen | Update category |
-| DELETE | `/api/menu/categories/:id` | Kitchen | Delete category (orphans items) |
 | POST | `/api/menu/items` | Kitchen | Create dish (enforces ₹200 per-item cap) |
 | GET | `/api/menu/items` | Kitchen | List own items |
 | PATCH | `/api/menu/items/:id` | Kitchen | Update dish (enforces price cap if price changed) |
 | DELETE | `/api/menu/items/:id` | Kitchen | Deactivate dish |
-| PUT | `/api/menu/items/:id/availability` | Kitchen | Set daily plate count |
+| GET | `/api/menu/daily?date=` | Kitchen | Catalog annotated with that date's plate counts (defaults to today, IST) |
+| PUT | `/api/menu/daily` | Kitchen | **The only write path for plate counts.** Batch upsert/remove today's dishes |
 | PUT | `/api/menu/items/:id/preferences` | Kitchen | Set preference toggles |
 | GET | `/api/menu/kitchens/:kitchenId` | Authenticated | Customer-facing: full menu for a kitchen |
 
@@ -296,7 +293,7 @@ Stock alerts (fired from `OrdersService.create()`):
 - Wrap multi-write operations in `prisma.$transaction`.
 - Health check lives at `GET /api/health`; global prefix is `/api`.
 - Ownership checks: services verify the authenticated user owns the resource
-  (e.g., `ownsItem()`, `ownsCategory()` in MenuService).
+  (e.g., `ownsItem()` in MenuService).
 
 ---
 
@@ -305,8 +302,8 @@ Stock alerts (fired from `OrdersService.create()`):
    to the request. Add a `device_tokens` table (FCM tokens per customer/kitchen).
 2. **Kitchens** — signup, profile, doc upload, verification status, "Cooking Today"
    toggle (`KitchenDailyStatus`), daily plate counts (`MenuDailyAvailability`).
-3. **Menu** — categories, dishes, per-dish preference toggles (`MenuItemPreference`),
-   prices, availability.
+3. **Menu** — dishes, per-dish preference toggles (`MenuItemPreference`),
+   prices, and the daily menu (plate counts per dish per day).
 4. **Payments** — create Razorpay order, verify webhook signature, mark
    `Payment.captured`. Never store card data.
 5. **Notifications** — FCM high-priority DATA messages for order alerts, a

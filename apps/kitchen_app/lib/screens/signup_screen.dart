@@ -7,7 +7,6 @@ import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
-import '../widgets/address_picker.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -145,7 +144,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           // --- Address ---
           Text('Address', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
-          AddressPicker(onChanged: (r) => setState(() => _addr = r)),
+          AddressPicker(
+            api: ref.read(apiClientProvider),
+            userAgentPackageName: 'com.homely.kitchen_app',
+            onChanged: (r) => setState(() => _addr = r),
+          ),
           const SizedBox(height: 24),
 
           // --- Kitchen photos (multiple, required) ---

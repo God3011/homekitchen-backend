@@ -30,14 +30,4 @@ class Rating {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'orderId': orderId,
-      'kitchenId': kitchenId,
-      'stars': stars,
-      'comment': comment,
-      'createdAt': createdAt.toIso8601String(),
-    };
-  }
 }

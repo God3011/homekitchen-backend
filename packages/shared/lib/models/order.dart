@@ -24,12 +24,6 @@ class OrderItemPreference {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'preference': preference,
-    };
-  }
 }
 
 /// A line item within an order. Name and price are snapshotted at order time
@@ -66,16 +60,6 @@ class OrderItem {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'menuItemId': menuItemId,
-      'itemName': itemName,
-      'unitPricePaise': unitPricePaise,
-      'quantity': quantity,
-      'preferences': preferences.map((e) => e.toJson()).toList(),
-    };
-  }
 }
 
 /// Payment info attached to an order.
@@ -99,13 +83,6 @@ class Payment {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'amountPaise': amountPaise,
-      'status': status,
-    };
-  }
 }
 
 /// Order model — mirrors the backend Order entity.
@@ -201,27 +178,6 @@ class Order {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'customerId': customerId,
-      'kitchenId': kitchenId,
-      'fulfillment': fulfillment,
-      'status': status.toJson(),
-      'foodTotalPaise': foodTotalPaise,
-      'platformFeePaise': platformFeePaise,
-      'deliveryFeePaise': deliveryFeePaise,
-      'grandTotalPaise': grandTotalPaise,
-      'etaMinutes': etaMinutes,
-      'handoverCode': handoverCode,
-      'placedAt': placedAt.toIso8601String(),
-      'acceptedAt': acceptedAt?.toIso8601String(),
-      'readyAt': readyAt?.toIso8601String(),
-      'completedAt': completedAt?.toIso8601String(),
-      'items': items.map((e) => e.toJson()).toList(),
-      'payment': payment?.toJson(),
-    };
-  }
 
   @override
   String toString() => 'Order(id: $id, status: $status, grandTotalPaise: $grandTotalPaise)';

@@ -4,7 +4,6 @@ import 'package:shared/shared.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/kitchen_provider.dart';
-import '../services/push_service.dart';
 import 'documents_screen.dart';
 import 'edit_profile_screen.dart';
 import 'operating_hours_screen.dart';

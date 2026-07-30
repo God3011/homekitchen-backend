@@ -34,17 +34,6 @@ class Customer {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'firebaseUid': firebaseUid,
-      'phone': phone,
-      'name': name,
-      'homeZoneId': homeZoneId,
-      'whatsappOptIn': whatsappOptIn,
-      'createdAt': createdAt.toIso8601String(),
-    };
-  }
 
   @override
   String toString() => 'Customer(id: $id, name: $name)';

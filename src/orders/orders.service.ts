@@ -62,12 +62,6 @@ export class OrdersService {
    * + a "created" Payment + the first status-history row are written atomically
    * in one transaction. After placement, low-stock and sold-out alerts are sent.
    */
-  private serviceDate(): Date {
-    // "Today" in IST as UTC-midnight — the menu day rolls over at IST midnight.
-    // Centralized so orders, discovery, and the daily-menu screen agree.
-    return istServiceDate();
-  }
-
   async create(customerId: string, dto: CreateOrderDto) {
     // --- Gap #5: kitchen readiness checks ---
     const kitchen = await this.prisma.kitchen.findUnique({
@@ -78,7 +72,9 @@ export class OrdersService {
       throw new BadRequestException('Kitchen is not verified.');
     }
 
-    const today = this.serviceDate();
+    // "Today" in IST as UTC-midnight — the menu day rolls over at IST midnight,
+    // so orders, discovery, and the daily-menu screen all agree.
+    const today = istServiceDate();
 
     const dailyStatus = await this.prisma.kitchenDailyStatus.findUnique({
       where: {
@@ -308,21 +304,34 @@ export class OrdersService {
     return order;
   }
 
-  async reject(orderId: string, kitchenId: string, reason?: string) {
+  /**
+   * Closes a still-`received` order and gives its plates back, atomically.
+   * Bypasses transition() because the plate restore has to share the same
+   * transaction as the status write. `owner` is the field the caller is allowed
+   * to act on behalf of, so a kitchen can only reject its own orders and a
+   * customer can only cancel theirs.
+   */
+  private async closeAndRestore(
+    orderId: string,
+    owner: { field: 'kitchenId' | 'customerId'; id: string; message: string },
+    to: (typeof OrderStatus)['rejected' | 'cancelled'],
+    extra: Prisma.OrderUpdateInput,
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true },
+      include: { items: true, payment: true },
     });
     if (!order) throw new NotFoundException('Order not found.');
-    if (order.kitchenId !== kitchenId) {
-      throw new ForbiddenException('This order belongs to another kitchen.');
+    if (order[owner.field] !== owner.id) {
+      throw new ForbiddenException(owner.message);
     }
     if (order.status !== OrderStatus.received) {
       throw new BadRequestException(
-        `Cannot move an order from "${order.status}" to "rejected".`,
+        `Cannot move an order from "${order.status}" to "${to}".`,
       );
     }
-    const today = this.serviceDate();
+
+    const today = istServiceDate();
     const updated = await this.prisma.$transaction(async (tx) => {
       for (const item of order.items) {
         await tx.menuDailyAvailability.updateMany({
@@ -335,14 +344,23 @@ export class OrdersService {
       }
       return tx.order.update({
         where: { id: orderId },
-        data: {
-          status: OrderStatus.rejected,
-          rejectReason: reason,
-          statusHistory: { create: { status: OrderStatus.rejected } },
-        },
+        data: { status: to, ...extra, statusHistory: { create: { status: to } } },
       });
     });
+    return { order, updated };
+  }
 
+  async reject(orderId: string, kitchenId: string, reason?: string) {
+    const { updated } = await this.closeAndRestore(
+      orderId,
+      {
+        field: 'kitchenId',
+        id: kitchenId,
+        message: 'This order belongs to another kitchen.',
+      },
+      OrderStatus.rejected,
+      { rejectReason: reason },
+    );
     await this.notify({
       kitchenId: updated.kitchenId,
       customerId: updated.customerId,
@@ -353,40 +371,16 @@ export class OrdersService {
   }
 
   async cancel(orderId: string, customerId: string, reason?: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: true, payment: true },
-    });
-    if (!order) throw new NotFoundException('Order not found.');
-    if (order.customerId !== customerId) {
-      throw new ForbiddenException('This order belongs to another customer.');
-    }
-    if (order.status !== OrderStatus.received) {
-      throw new BadRequestException(
-        `Cannot move an order from "${order.status}" to "cancelled".`,
-      );
-    }
-    const today = this.serviceDate();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      for (const item of order.items) {
-        await tx.menuDailyAvailability.updateMany({
-          where: { menuItemId: item.menuItemId, serviceDate: today },
-          data: {
-            platesRemaining: { increment: item.quantity },
-            isAvailable: true,
-          },
-        });
-      }
-      return tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: OrderStatus.cancelled,
-          cancelReason: reason,
-          cancelledAt: new Date(),
-          statusHistory: { create: { status: OrderStatus.cancelled } },
-        },
-      });
-    });
+    const { order, updated } = await this.closeAndRestore(
+      orderId,
+      {
+        field: 'customerId',
+        id: customerId,
+        message: 'This order belongs to another customer.',
+      },
+      OrderStatus.cancelled,
+      { cancelReason: reason, cancelledAt: new Date() },
+    );
 
     // Only tell the kitchen if it was ever told about this order in the first
     // place — the "new order" push fires on payment capture, so an unpaid order
@@ -400,14 +394,6 @@ export class OrdersService {
       });
     }
     return updated;
-  }
-
-  /** UTC-midnight of the local day a timestamp falls on — matches how plates
-   *  were reserved at placement (see serviceDate()). */
-  private serviceDateOf(ts: Date): Date {
-    // The IST service day the order was placed on — plates were reserved
-    // against that day's availability row, so restore against the same one.
-    return istServiceDate(ts);
   }
 
   /**
@@ -436,7 +422,9 @@ export class OrdersService {
 
     let expired = 0;
     for (const order of stale) {
-      const serviceDate = this.serviceDateOf(order.placedAt);
+      // Plates were reserved against the IST service day the order was placed
+      // on, so restore them against that same day's row.
+      const serviceDate = istServiceDate(order.placedAt);
       const didCancel = await this.prisma.$transaction(async (tx) => {
         // Guard against a concurrent accept: only cancel if still "received".
         const upd = await tx.order.updateMany({

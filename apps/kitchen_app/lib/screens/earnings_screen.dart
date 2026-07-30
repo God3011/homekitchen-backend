@@ -5,7 +5,6 @@ import 'package:shared/shared.dart';
 import '../providers/auth_provider.dart';
 import '../providers/earnings_provider.dart';
 
-String _rupees(int paise) => '₹${(paise / 100).toStringAsFixed(0)}';
 
 const _periods = <String, String>{
   'today': 'Today',
@@ -160,7 +159,7 @@ class _PendingBalanceCard extends StatelessWidget {
                     fontWeight: FontWeight.w700)),
           ]),
           const SizedBox(height: 8),
-          Text(_rupees(pendingPaise),
+          Text(formatPaise(pendingPaise),
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
                   color: HomelyColors.ink, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
@@ -193,17 +192,17 @@ class _SummaryCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            _row(context, 'Gross earnings', _rupees(summary.grossPaise)),
+            _row(context, 'Gross earnings', formatPaise(summary.grossPaise)),
             const Divider(height: 20),
             _row(context, 'Completed orders', '${summary.orderCount}'),
             const Divider(height: 20),
             _row(context, 'Platform fees',
-                '− ${_rupees(summary.feesPaise)}'),
+                '− ${formatPaise(summary.feesPaise)}'),
             const Divider(height: 20),
             _row(
               context,
               'Net earnings',
-              _rupees(summary.netEarningsPaise),
+              formatPaise(summary.netEarningsPaise),
               bold: true,
               valueColor: HomelyColors.goldDeep,
             ),
@@ -273,7 +272,7 @@ class _PayoutHistory extends ConsumerWidget {
                 child: ListTile(
                   leading: const Icon(Icons.south_west,
                       color: HomelyColors.sageDeep),
-                  title: Text(_rupees(p.amountPaise),
+                  title: Text(formatPaise(p.amountPaise),
                       style: const TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(_humanDate(p.payoutDate)),
                   trailing: p.note != null
