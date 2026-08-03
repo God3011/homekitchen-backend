@@ -3,10 +3,18 @@ import 'package:shared/shared.dart';
 
 import '../models/customer_address.dart';
 import 'api_provider.dart';
+import 'auth_provider.dart';
 
 /// The customer's saved locations, default (active) first. App-wide (not
 /// autoDispose) so the home header and discovery share one cached source.
+///
+/// Rebuilds whenever the signed-in Firebase user changes. Without this, the
+/// provider (kept alive permanently by [activeAddressProvider]) would keep
+/// serving the previous account's addresses after a logout/login — and
+/// switching/editing one of those would 404 on the backend, since it belongs to
+/// a different customer.
 final addressesProvider = FutureProvider<List<CustomerAddress>>((ref) async {
+  ref.watch(authStateProvider.select((a) => a.valueOrNull?.uid));
   final api = ref.watch(apiClientProvider);
   final data = await api.getList('/customers/me/addresses');
   return data

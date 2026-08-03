@@ -17,11 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { RequestUser } from '../auth/decorators';
-import {
-  istDayOfWeek,
-  istServiceDate,
-  istTimeHHMM,
-} from '../common/service-date';
+import { istServiceDate } from '../common/service-date';
 
 @Injectable()
 export class OrdersService {
@@ -84,33 +80,15 @@ export class OrdersService {
         },
       },
     });
+    // The "Cooking Today" toggle is the single source of truth for whether a
+    // kitchen is open right now — it takes precedence over the configured
+    // operating hours. If the cook has toggled on, orders are accepted even
+    // outside their usual hours (and conversely, toggling off closes them
+    // regardless of hours). Operating hours are informational only.
     if (!dailyStatus?.isCooking) {
       throw new BadRequestException({
         message: 'Kitchen is not cooking today.',
         dormantReason: 'not_cooking_today',
-      });
-    }
-
-    const dayOfWeek = istDayOfWeek(); // 0=Sun .. 6=Sat, in IST
-    const hours = await this.prisma.kitchenHours.findUnique({
-      where: {
-        kitchenId_dayOfWeek: {
-          kitchenId: dto.kitchenId,
-          dayOfWeek,
-        },
-      },
-    });
-    if (!hours) {
-      throw new BadRequestException({
-        message: 'Kitchen is not open today.',
-        dormantReason: 'outside_hours',
-      });
-    }
-    const currentTime = istTimeHHMM(); // IST wall-clock "HH:MM"
-    if (currentTime < hours.openTime || currentTime >= hours.closeTime) {
-      throw new BadRequestException({
-        message: 'Kitchen is outside operating hours.',
-        dormantReason: 'outside_hours',
       });
     }
 

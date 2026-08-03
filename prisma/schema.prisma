@@ -5,12 +5,14 @@
 // ============================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm]
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +180,8 @@ model Kitchen {
   favorites    Favorite[]
 
   @@index([zoneId, status])
+  // Trigram index for typo-tolerant search on kitchen name (pg_trgm).
+  @@index([kitchenName(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("kitchens")
 }
 
@@ -242,6 +246,8 @@ model MenuItem {
   orderItems   OrderItem[]
 
   @@index([kitchenId, isActive])
+  // Trigram index for typo-tolerant search on dish name (pg_trgm).
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("menu_items")
 }
 

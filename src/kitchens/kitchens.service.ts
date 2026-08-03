@@ -23,11 +23,9 @@ import { StorageService, UploadFile } from '../storage/storage.service';
 import { ZonesService } from '../zones/zones.service';
 import { RequestUser } from '../auth/decorators';
 import {
-  istDayOfWeek,
   istDayStartUtc,
   istServiceDate,
   istServiceDateDaysAgo,
-  istTimeHHMM,
   parseServiceDate,
 } from '../common/service-date';
 
@@ -394,11 +392,9 @@ export class KitchensService {
     _user: RequestUser,
     opts: { lat: number; lng: number; radiusM?: number },
   ) {
-    // Today's IST service date / weekday / wall-clock — the menu day rolls over
-    // at IST midnight, consistent with orders and the daily-menu screen.
+    // Today's IST service date — the menu day rolls over at IST midnight,
+    // consistent with orders and the daily-menu screen.
     const serviceDate = istServiceDate();
-    const dayOfWeek = istDayOfWeek(); // 0=Sun .. 6=Sat
-    const currentTime = istTimeHHMM();
 
     const config = await this.prisma.platformConfig.findUniqueOrThrow({
       where: { id: 1 },
@@ -427,10 +423,6 @@ export class KitchensService {
         lat: true,
         lng: true,
         ratings: { select: { stars: true } },
-        hours: {
-          where: { dayOfWeek },
-          select: { openTime: true, closeTime: true },
-        },
         dailyStatus: {
           where: { serviceDate },
           select: { isCooking: true },
@@ -480,26 +472,23 @@ export class KitchensService {
     }
 
     const cards = inRadius.map(({ k, distanceM }) => {
-      const { ratings, hours, dailyStatus, ...card } = k;
+      const { ratings, dailyStatus, ...card } = k;
       const ratingCount = ratings.length;
       const ratingAvg = ratingCount
         ? ratings.reduce((sum, r) => sum + r.stars, 0) / ratingCount
         : null;
+      // The "Cooking Today" toggle takes precedence over operating hours: a
+      // kitchen is serviceable whenever the cook has toggled on and has plates,
+      // regardless of the configured hours (which are informational only). So
+      // `outside_hours` is no longer a serviceability reason.
       const cooking = dailyStatus[0]?.isCooking === true;
-      const today = hours[0];
-      const withinHours =
-        !!today &&
-        currentTime >= today.openTime &&
-        currentTime < today.closeTime;
       const hasPlates = platesSet.has(k.id);
-      const serviceable = cooking && withinHours && hasPlates;
+      const serviceable = cooking && hasPlates;
       const dormantReason = serviceable
         ? undefined
         : !cooking
           ? 'not_cooking_today'
-          : !withinHours
-            ? 'outside_hours'
-            : 'sold_out';
+          : 'sold_out';
       return {
         ...card,
         ratingAvg,

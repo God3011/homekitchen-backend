@@ -15,5 +15,6 @@
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true
-  }
+  },
+  "exclude": ["node_modules", "dist", "scripts", "test"]
 }

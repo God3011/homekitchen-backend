@@ -33,11 +33,14 @@ pattern — match its structure and conventions in every new module.**
   outside every zone (ordering still works with a null zone).
 - **The kitchen-list endpoint returns three distinct states** so the app can
   render them differently:
-  - **(a) serviceable** — verified + cooking today + within operating hours + has
-    plates. → normal list.
+  - **(a) serviceable** — verified + cooking today + has plates. → normal list.
+    The **"Cooking Today" toggle takes precedence over operating hours**: a
+    kitchen that has toggled on is serviceable even outside its configured hours.
+    `KitchenHours` is informational only and no longer gates serviceability or
+    ordering.
   - **(b) in radius but not serviceable** — kitchens exist within radius but none
     currently serviceable. Return them with `serviceable: false` and a `reason`
-    (`not_cooking_today` | `outside_hours` | `sold_out`). → dimmed list with a
+    (`not_cooking_today` | `sold_out`). → dimmed list with a
     "No serviceable kitchens right now" banner.
   - **(c) no kitchens within radius at all.** → "Not serving your area yet" screen
     with interest capture (log coordinates + optional phone number).

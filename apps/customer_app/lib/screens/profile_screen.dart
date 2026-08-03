@@ -70,9 +70,16 @@ class ProfileScreen extends ConsumerWidget {
                   side: const BorderSide(color: HomelyColors.danger),
                 ),
                 onPressed: () async {
+                  // Capture the navigator before the async gaps.
+                  final navigator = Navigator.of(context);
                   // Unregister the FCM token while still authenticated.
                   await unregisterDeviceToken(ref.read(apiClientProvider));
                   await ref.read(authServiceProvider).signOut();
+                  // This screen is a pushed route, so signing out only swaps the
+                  // root auth gate to the login screen *underneath* it. Pop back
+                  // to the root so the login screen is actually shown instead of
+                  // this now-empty profile page.
+                  navigator.popUntil((route) => route.isFirst);
                 },
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign out'),

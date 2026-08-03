@@ -14,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
 import { ZonesModule } from './zones/zones.module';
+import { SearchModule } from './search/search.module';
 import { GeocodeModule } from './geocode/geocode.module';
 import { ServiceInterestModule } from './service-interest/service-interest.module';
 import { AdminModule } from './admin/admin.module';
@@ -35,6 +36,7 @@ import { AdminModule } from './admin/admin.module';
     PaymentsModule,
     NotificationsModule,
     ZonesModule,
+    SearchModule,
     GeocodeModule,
     FavoritesModule,
     ServiceInterestModule,
